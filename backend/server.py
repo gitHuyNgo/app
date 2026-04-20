@@ -655,7 +655,7 @@ async def osrm_route(coords: List[Tuple[float, float]], alternatives: bool = Fal
     params = {"overview": "full", "geometries": "geojson", "alternatives": str(alternatives).lower(), "steps": "false"}
     url = f"{OSRM_BASE}/route/v1/driving/{coord_str}"
     try:
-        async with httpx.AsyncClient(timeout=6) as client_http:
+        async with httpx.AsyncClient(timeout=3) as client_http:
             r = await client_http.get(url, params=params)
             if r.status_code != 200:
                 return None
@@ -674,7 +674,7 @@ async def osrm_trip(coords: List[Tuple[float, float]]) -> dict:
     }
     url = f"{OSRM_BASE}/trip/v1/driving/{coord_str}"
     try:
-        async with httpx.AsyncClient(timeout=6) as client_http:
+        async with httpx.AsyncClient(timeout=3) as client_http:
             r = await client_http.get(url, params=params)
             if r.status_code != 200:
                 return None
