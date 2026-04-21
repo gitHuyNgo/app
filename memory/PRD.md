@@ -24,26 +24,28 @@ platform for Singapore, using **LTA DataMall** as the live data source.
 - **FR-01 / FR-02** Hub Managers CRUD with phone uniqueness validation
 - **FR-03 / FR-04 / FR-05** Drivers CRUD + status (available / delivering / off-duty)
 - **FR-06 / FR-07 / FR-08** Vehicles CRUD (motorbike/van, EV/diesel), 1-driver-per-vehicle assignment
-- **FR-09 / FR-10 / FR-11** Zone create/edit (polygon) + driver-to-zone assignment + map visualization
+- **FR-09 / FR-10 / FR-11** Zone **interactive polygon drawing** (click-to-add vertices, drag-to-reshape, click-to-remove with draw-mode toggle) + driver-to-zone assignment + map visualization
 - **FR-12** Warehouse entry (address, postal code, lat/lng, weight, required-by)
 - **FR-13** Clustering by postal-code sector + configurable max-distance radius
 - **FR-14** Order status lifecycle pending → assigned → delivering → delivered/failed
 - **FR-15** Auto-assign: cluster → nearest available driver (by zone center, hub fallback)
 - **FR-16** Manual assign: multi-select orders → pick driver
-- **FR-17** Route planning with 3 modes: Time Priority (OSRM /trip → NN-TSP), Eco Mode (shortest km, EV-friendly), Avoid-ERP (CBD bbox detour)
+- **FR-17** Route planning with 3 modes (Time / Eco / Avoid-ERP) + **per-plan hub selector** (uses default hub if not specified)
 - **FR-18** Real-time driver GPS update + simulate-step for demo; live on map every 5 s
 - **FR-19** Shipper inbox `/api/shipper/{driver_id}/orders` with ordered sequence + route polyline
 - **FR-20** Delivered/Failed update with optional proof_photo, proof_signature, fail_reason
+- **Hubs (multi-location, Jan 2026)** full CRUD, pin by drag or map-click, address geocoding via OpenStreetMap Nominatim with graceful fallback, is_default flag enforced, shown on Overview map + used as routing origin
 
-## Frontend Pages (8)
-1. Overview — KPI cards, live Singapore map with zones/orders/drivers/incidents, LTA incident feed
-2. Route Planning — driver selector, mode selector (Time/Eco/Avoid-ERP), route polyline, delivery sequence list, live traffic speed-bands toggle
-3. Orders & Dispatch — tabs: Inbound Warehouse / Clustering / Assignment / Tracking
-4. Drivers — CRUD + inline status dropdown
+## Frontend Pages (9)
+1. Overview — KPIs including Hubs count, live Singapore map with hubs/zones/orders/drivers/incidents
+2. Route Planning — driver + **hub** + mode selectors, route polyline, delivery sequence, traffic bands toggle
+3. Orders & Dispatch — tabs: Inbound / Clustering / Assignment / Tracking
+4. Drivers — CRUD + inline status
 5. Fleet — Vehicles CRUD + assign/unassign driver
-6. Zones — list + map + preset polygons + driver assignment
-7. Hub Managers — CRUD
-8. Shipper Cockpit — driver selector, own status, active deliveries, Delivered/Failed actions with reason modal
+6. Zones — interactive polygon editor (Draw mode, Undo, Clear, vertex drag)
+7. **Hubs — map-picker CRUD, geocode search, default-flag**
+8. Hub Managers — CRUD
+9. Shipper Cockpit — Delivered/Failed with reason
 
 ## Tests
 - Backend: 29/29 pytest cases (`/app/backend/tests/backend_test.py`)
