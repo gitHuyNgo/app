@@ -2,20 +2,14 @@ import React, { useEffect, useState } from "react";
 import { http } from "../lib/api";
 import { Modal, Badge } from "../components/UI";
 import MapView from "../components/MapView";
-
-const PRESETS = [
-  { name: "Central CBD", color: "#ef4444", polygon: [[1.300,103.830],[1.300,103.870],[1.280,103.870],[1.280,103.830]] },
-  { name: "East Coast", color: "#0ea5a4", polygon: [[1.330,103.900],[1.330,103.960],[1.290,103.960],[1.290,103.900]] },
-  { name: "North-West", color: "#f59e0b", polygon: [[1.400,103.740],[1.400,103.800],[1.360,103.800],[1.360,103.740]] },
-  { name: "Jurong", color: "#8b5cf6", polygon: [[1.345,103.720],[1.345,103.770],[1.320,103.770],[1.320,103.720]] },
-  { name: "Punggol", color: "#0d7c78", polygon: [[1.415,103.890],[1.415,103.935],[1.390,103.935],[1.390,103.890]] },
-];
+import PolygonEditor from "../components/PolygonEditor";
 
 export default function Zones() {
   const [zones, setZones] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", color: "#0d7c78", polygon: PRESETS[0].polygon });
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: "", color: "#0d7c78", polygon: [] });
   const [assignOpen, setAssignOpen] = useState(null);
   const [assignDriverId, setAssignDriverId] = useState("");
 
@@ -25,8 +19,13 @@ export default function Zones() {
   };
   useEffect(() => { load(); }, []);
 
-  const create = async () => {
-    await http.post("/zones", { name: form.name, polygon: form.polygon, color: form.color });
+  const openNew = () => { setEditing(null); setForm({ name: "", color: "#0d7c78", polygon: [] }); setOpen(true); };
+  const openEdit = (z) => { setEditing(z); setForm({ name: z.name, color: z.color || "#0d7c78", polygon: z.polygon }); setOpen(true); };
+
+  const save = async () => {
+    if (!form.name || form.polygon.length < 3) return;
+    if (editing) await http.put(`/zones/${editing.id}`, { name: form.name, polygon: form.polygon, color: form.color });
+    else await http.post("/zones", { name: form.name, polygon: form.polygon, color: form.color });
     setOpen(false); load();
   };
   const remove = async (z) => { if (!window.confirm(`Delete zone ${z.name}?`)) return; await http.delete(`/zones/${z.id}`); load(); };
@@ -43,15 +42,15 @@ export default function Zones() {
   return (
     <div>
       <div className="page-title"><span className="accent"></span>Zones</div>
-      <div className="page-subtitle">FR-09 · FR-10 · FR-11 — Define delivery zones, assign drivers, visualize on map</div>
+      <div className="page-subtitle">FR-09 · FR-10 · FR-11 — Trace zones on the map, assign drivers, visualize coverage</div>
 
       <div className="toolbar">
-        <button className="btn primary" data-testid="add-zone-btn" onClick={() => { setForm({ name: "", color: "#0d7c78", polygon: PRESETS[0].polygon }); setOpen(true); }}>+ Add Zone</button>
+        <button className="btn primary" data-testid="add-zone-btn" onClick={openNew}>+ Draw New Zone</button>
       </div>
 
       <div className="section">
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }} className="card-title">Zone Map</div>
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }} className="card-title">Zone Coverage</div>
           <div style={{ padding: 12 }}>
             <MapView height={520} zones={zones} />
           </div>
@@ -68,7 +67,9 @@ export default function Zones() {
                       <span style={{ width: 10, height: 10, background: z.color, borderRadius: 3 }}></span>
                       <b>{z.name}</b>
                     </div>
-                    <div className="muted" style={{ fontSize: 11 }}>Center: {z.center[0].toFixed(3)}, {z.center[1].toFixed(3)}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      {z.polygon.length} vertices · center {z.center[0].toFixed(3)}, {z.center[1].toFixed(3)}
+                    </div>
                   </td>
                   <td>
                     {z.driver_ids.length === 0 && <span className="muted">None</span>}
@@ -82,43 +83,33 @@ export default function Zones() {
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <button className="btn sm" data-testid={`assign-zone-${z.id}`} onClick={() => { setAssignOpen(z); setAssignDriverId(""); }}>+ Driver</button>
+                    <button className="btn sm ghost" onClick={() => openEdit(z)} data-testid={`edit-zone-${z.id}`}>Edit</button>
                     <button className="btn sm ghost" style={{ color: "#b91c1c" }} onClick={() => remove(z)} data-testid={`del-zone-${z.id}`}>Delete</button>
                   </td>
                 </tr>
               ))}
-              {zones.length === 0 && <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No zones.</td></tr>}
+              {zones.length === 0 && <tr><td colSpan={3} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No zones. Draw your first one.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
-      <Modal open={open} title="New Zone" onClose={() => setOpen(false)}
+      <Modal open={open} title={editing ? `Edit ${editing.name}` : "Draw New Zone"} onClose={() => setOpen(false)}
         footer={<>
           <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn primary" disabled={!form.name} onClick={create} data-testid="save-zone-btn">Create</button>
+          <button className="btn primary" disabled={!form.name || form.polygon.length < 3} onClick={save} data-testid="save-zone-btn">
+            {editing ? "Save" : "Create"}
+          </button>
         </>}>
-        <div className="field"><label className="label">Zone name</label>
-          <input className="input" data-testid="zone-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
         <div className="row">
+          <div className="field"><label className="label">Zone name</label>
+            <input className="input" data-testid="zone-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
           <div className="field"><label className="label">Color</label>
             <input className="input" type="color" data-testid="zone-color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} /></div>
-          <div className="field"><label className="label">Preset shape</label>
-            <select className="select" data-testid="zone-preset" onChange={e => {
-              const p = PRESETS.find(x => x.name === e.target.value);
-              if (p) setForm(f => ({ ...f, polygon: p.polygon, name: f.name || p.name, color: p.color }));
-            }}>
-              <option>— choose a preset polygon —</option>
-              {PRESETS.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-            </select></div>
         </div>
         <div className="field">
-          <label className="label">Polygon (lat,lng; lat,lng; …)</label>
-          <textarea className="textarea" data-testid="zone-polygon"
-            value={form.polygon.map(p => p.join(",")).join("; ")}
-            onChange={e => {
-              const parsed = e.target.value.split(";").map(s => s.trim()).filter(Boolean).map(s => s.split(",").map(parseFloat));
-              setForm({ ...form, polygon: parsed });
-            }} />
+          <label className="label">Polygon — click the map to add vertices, drag to reshape</label>
+          <PolygonEditor value={form.polygon} color={form.color} onChange={(p) => setForm(f => ({ ...f, polygon: p }))} height={380} />
         </div>
       </Modal>
 

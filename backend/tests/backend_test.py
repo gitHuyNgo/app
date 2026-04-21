@@ -309,3 +309,127 @@ class TestLTA:
         r = client.get(f"{API}/lta/erp-rates", timeout=30)
         assert r.status_code == 200
         assert isinstance(r.json(), list)
+
+
+# ───── NEW: Hubs CRUD + default enforcement ─────
+class TestHubs:
+    def test_list_seeded_hubs(self, client):
+        r = client.get(f"{API}/hubs")
+        assert r.status_code == 200
+        hubs = r.json()
+        assert len(hubs) >= 3
+        defaults = [h for h in hubs if h.get("is_default")]
+        assert len(defaults) == 1, f"Expected exactly one default hub, got {len(defaults)}"
+
+    def test_create_hub_and_persist(self, client):
+        payload = {"name": "TEST_Hub_North", "address": "TEST addr", "lat": 1.44, "lng": 103.80, "is_default": False}
+        r = client.post(f"{API}/hubs", json=payload)
+        assert r.status_code == 200, r.text
+        h = r.json()
+        assert h["name"] == payload["name"]
+        assert h["lat"] == 1.44 and h["lng"] == 103.80
+        hid = h["id"]
+        # GET verify persisted
+        all_hubs = client.get(f"{API}/hubs").json()
+        assert any(x["id"] == hid for x in all_hubs)
+        # cleanup
+        client.delete(f"{API}/hubs/{hid}")
+
+    def test_default_enforcement_on_create(self, client):
+        # create a hub with is_default=true, previous default should be unset
+        before = client.get(f"{API}/hubs").json()
+        old_default = next((h for h in before if h.get("is_default")), None)
+        payload = {"name": "TEST_Hub_Default", "address": "x", "lat": 1.30, "lng": 103.80, "is_default": True}
+        r = client.post(f"{API}/hubs", json=payload)
+        assert r.status_code == 200
+        new_hub = r.json()
+        assert new_hub["is_default"] is True
+        after = client.get(f"{API}/hubs").json()
+        defaults = [h for h in after if h.get("is_default")]
+        assert len(defaults) == 1 and defaults[0]["id"] == new_hub["id"]
+        # restore old default & delete test hub
+        if old_default:
+            client.put(f"{API}/hubs/{old_default['id']}", json={**old_default, "is_default": True})
+        client.delete(f"{API}/hubs/{new_hub['id']}")
+
+    def test_update_hub(self, client):
+        hubs = client.get(f"{API}/hubs").json()
+        target = next(h for h in hubs if not h.get("is_default"))
+        body = {**{k: target[k] for k in ("name", "address", "lat", "lng", "is_default", "notes")}, "notes": "TEST_updated"}
+        r = client.put(f"{API}/hubs/{target['id']}", json=body)
+        assert r.status_code == 200
+        assert r.json()["notes"] == "TEST_updated"
+        # GET verify
+        got = [h for h in client.get(f"{API}/hubs").json() if h["id"] == target["id"]][0]
+        assert got["notes"] == "TEST_updated"
+
+    def test_delete_default_promotes_another(self, client):
+        # create two hubs: one default, then delete it, expect promotion
+        h1 = client.post(f"{API}/hubs", json={"name": "TEST_DD1", "lat": 1.3, "lng": 103.8, "is_default": False}).json()
+        h2 = client.post(f"{API}/hubs", json={"name": "TEST_DD2", "lat": 1.31, "lng": 103.81, "is_default": True}).json()
+        # delete default h2
+        r = client.delete(f"{API}/hubs/{h2['id']}")
+        assert r.status_code == 200
+        after = client.get(f"{API}/hubs").json()
+        defaults = [h for h in after if h.get("is_default")]
+        assert len(defaults) == 1, f"Expected promotion, got {len(defaults)} defaults"
+        # cleanup
+        client.delete(f"{API}/hubs/{h1['id']}")
+        # re-establish original default (first seeded hub)
+        seeded = client.get(f"{API}/hubs").json()
+        if seeded and not any(h.get("is_default") for h in seeded):
+            first = seeded[0]
+            client.put(f"{API}/hubs/{first['id']}", json={**{k: first[k] for k in ("name","address","lat","lng","notes")}, "is_default": True})
+
+
+# ───── NEW: Geocode graceful fallback ─────
+class TestGeocode:
+    def test_geocode_returns_json_no_500(self, client):
+        r = client.get(f"{API}/geocode", params={"q": "Marina Bay Sands"}, timeout=15)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "results" in body
+        # Either results present or graceful error string, but never 500
+        assert isinstance(body["results"], list)
+
+    def test_geocode_validation(self, client):
+        r = client.get(f"{API}/geocode", params={"q": "ab"})
+        assert r.status_code == 422  # pydantic min_length=3
+
+
+# ───── NEW: Routing with explicit hub_id ─────
+class TestRoutingWithHub:
+    def test_plan_with_non_default_hub(self, client):
+        client.post(f"{API}/orders/cluster", json={"max_distance_m": 3000})
+        client.post(f"{API}/orders/assign-auto")
+        orders = client.get(f"{API}/orders").json()
+        assigned = [o for o in orders if o.get("driver_id") and o["status"] == "assigned"]
+        if not assigned:
+            pytest.skip("No assigned orders")
+        did = assigned[0]["driver_id"]
+        hubs = client.get(f"{API}/hubs").json()
+        non_default = [h for h in hubs if not h.get("is_default")]
+        if not non_default:
+            pytest.skip("No non-default hub")
+        hub = non_default[0]
+        r = client.post(f"{API}/routing/plan", json={"driver_id": did, "mode": "eco", "hub_id": hub["id"]}, timeout=30)
+        assert r.status_code == 200, r.text
+        route = r.json()
+        assert len(route["waypoints"]) >= 2
+        start = route["waypoints"][0]
+        # first waypoint should be the chosen hub
+        assert abs(start[0] - hub["lat"]) < 1e-4 and abs(start[1] - hub["lng"]) < 1e-4
+
+    def test_plan_without_hub_uses_default(self, client):
+        orders = client.get(f"{API}/orders").json()
+        assigned = [o for o in orders if o.get("driver_id") and o["status"] in ("assigned", "delivering")]
+        if not assigned:
+            pytest.skip("No assigned orders")
+        did = assigned[0]["driver_id"]
+        hubs = client.get(f"{API}/hubs").json()
+        default = next((h for h in hubs if h.get("is_default")), None)
+        assert default is not None
+        r = client.post(f"{API}/routing/plan", json={"driver_id": did, "mode": "time"}, timeout=30)
+        assert r.status_code == 200
+        start = r.json()["waypoints"][0]
+        assert abs(start[0] - default["lat"]) < 1e-4 and abs(start[1] - default["lng"]) < 1e-4

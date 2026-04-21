@@ -8,13 +8,14 @@ export default function Overview() {
   const [orders, setOrders] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [zones, setZones] = useState([]);
+  const [hubs, setHubs] = useState([]);
   const [incidents, setIncidents] = useState([]);
 
   const load = async () => {
-    const [s, o, d, z] = await Promise.all([
-      http.get("/stats"), http.get("/orders"), http.get("/drivers"), http.get("/zones"),
+    const [s, o, d, z, h] = await Promise.all([
+      http.get("/stats"), http.get("/orders"), http.get("/drivers"), http.get("/zones"), http.get("/hubs"),
     ]);
-    setStats(s.data); setOrders(o.data); setDrivers(d.data); setZones(z.data);
+    setStats(s.data); setOrders(o.data); setDrivers(d.data); setZones(z.data); setHubs(h.data);
     try { const inc = await http.get("/lta/incidents"); setIncidents(inc.data); } catch { setIncidents([]); }
   };
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
@@ -37,6 +38,7 @@ export default function Overview() {
         {stat("Delivered Today", stats?.orders_delivered, "emerald")}
         {stat("Drivers Available", stats?.drivers_available, "teal")}
         {stat("Active Zones", stats?.zones)}
+        {stat("Hubs", hubs.length, "red")}
         {stat("EV Vehicles", `${stats?.vehicles_ev ?? 0}/${stats?.vehicles ?? 0}`, "teal")}
         {stat("Live Incidents", incidents.length, "red")}
       </div>
@@ -48,7 +50,7 @@ export default function Overview() {
             <div className="card-subtitle">Red dots: LTA incidents · Teal zones: delivery zones · Dark markers: driver GPS</div>
           </div>
           <div style={{ padding: 12 }}>
-            <MapView height={560} orders={orders} drivers={drivers} zones={zones} incidents={incidents} />
+            <MapView height={560} orders={orders} drivers={drivers} zones={zones} hubs={hubs} incidents={incidents} />
             <div className="legend">
               <span><span className="sw" style={{ background: "#d2233c" }}></span>Hub / Incidents</span>
               <span><span className="sw" style={{ background: "#0d7c78" }}></span>Pending order</span>

@@ -12,7 +12,9 @@ const MODES = [
 export default function Routing() {
   const [drivers, setDrivers] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [hubs, setHubs] = useState([]);
   const [driverId, setDriverId] = useState("");
+  const [hubId, setHubId] = useState("");
   const [mode, setMode] = useState("time");
   const [route, setRoute] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -21,8 +23,12 @@ export default function Routing() {
   const [err, setErr] = useState("");
 
   const load = async () => {
-    const [d, o] = await Promise.all([http.get("/drivers"), http.get("/orders")]);
-    setDrivers(d.data); setOrders(o.data);
+    const [d, o, h] = await Promise.all([http.get("/drivers"), http.get("/orders"), http.get("/hubs")]);
+    setDrivers(d.data); setOrders(o.data); setHubs(h.data);
+    if (!hubId) {
+      const def = h.data.find(x => x.is_default) || h.data[0];
+      if (def) setHubId(def.id);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -37,7 +43,7 @@ export default function Routing() {
   const plan = async () => {
     setBusy(true); setErr(""); setRoute(null);
     try {
-      const r = await http.post("/routing/plan", { driver_id: driverId, mode });
+      const r = await http.post("/routing/plan", { driver_id: driverId, mode, hub_id: hubId || undefined });
       setRoute(r.data); await load();
     } catch (e) { setErr(e.response?.data?.detail || "Error planning route"); }
     setBusy(false);
@@ -67,12 +73,17 @@ export default function Routing() {
       <div className="page-subtitle">FR-17 · FR-18 · FR-19 — Optimal routing, live GPS and delivery sequence</div>
 
       <div className="toolbar">
-        <select className="select" style={{ width: 260 }} data-testid="routing-driver"
+        <select className="select" style={{ width: 240 }} data-testid="routing-driver"
           value={driverId} onChange={e => { setDriverId(e.target.value); setRoute(null); }}>
           <option value="">— choose driver with orders —</option>
           {driversWithOrders.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <select className="select" style={{ width: 200 }} data-testid="routing-mode" value={mode} onChange={e => setMode(e.target.value)}>
+        <select className="select" style={{ width: 200 }} data-testid="routing-hub"
+          value={hubId} onChange={e => setHubId(e.target.value)}>
+          <option value="">Default hub</option>
+          {hubs.map(h => <option key={h.id} value={h.id}>{h.name}{h.is_default ? " (default)" : ""}</option>)}
+        </select>
+        <select className="select" style={{ width: 180 }} data-testid="routing-mode" value={mode} onChange={e => setMode(e.target.value)}>
           {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
         <button className="btn primary" disabled={!driverId || busy || driverOrders.length === 0} onClick={plan} data-testid="plan-route-btn">
@@ -91,6 +102,7 @@ export default function Routing() {
             height={560}
             orders={driverOrders.length ? driverOrders : orders}
             drivers={selectedDriver && selectedDriver.location ? [selectedDriver] : []}
+            hubs={hubs}
             routes={route ? [{ geometry: route.geometry, color: mode === "eco" ? "#059669" : mode === "avoid_erp" ? "#d97706" : "#0d7c78" }] : []}
             speedBands={showTraffic ? speedBands : []}
           />

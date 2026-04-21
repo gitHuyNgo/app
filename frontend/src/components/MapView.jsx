@@ -13,6 +13,7 @@ L.Icon.Default.mergeOptions({
 const SG_CENTER = [1.3521, 103.8198];
 
 const hubIcon = L.divIcon({ className: "", html: `<div class="hub-marker"></div>`, iconSize: [18, 18] });
+const hubIconLg = L.divIcon({ className: "", html: `<div class="hub-marker lg"></div>`, iconSize: [22, 22] });
 const orderIcon = (status = "pending") =>
   L.divIcon({ className: "", html: `<div class="order-marker ${status}"></div>`, iconSize: [12, 12] });
 const driverIcon = (initial = "D") =>
@@ -33,7 +34,8 @@ export default function MapView({
   routes = [],            // [{ geometry: [[lat,lng],...], color }]
   incidents = [],
   speedBands = [],
-  showHub = true,
+  hubs = [],              // [{id, name, lat, lng, is_default}]
+  showHub = false,        // legacy: single hub at SG_CENTER
   fitTo = null,
 }) {
   const center = SG_CENTER;
@@ -64,7 +66,19 @@ export default function MapView({
             pathOptions={{ color: r.color || "#0d7c78", weight: 4, opacity: 0.85 }} />
         ))}
 
-        {showHub && (
+        {hubs.map((h) => (
+          <Marker key={h.id} position={[h.lat, h.lng]} icon={h.is_default ? hubIconLg : hubIcon}>
+            <Popup>
+              <div style={{ fontSize: 12 }}>
+                <div style={{ fontWeight: 600 }}>{h.name} {h.is_default && <span style={{color:'#d2233c'}}>· default</span>}</div>
+                {h.address && <div style={{ color: "#475569" }}>{h.address}</div>}
+                <div style={{ color: "#64748b" }}>{h.lat.toFixed(4)}, {h.lng.toFixed(4)}</div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {showHub && hubs.length === 0 && (
           <Marker position={[1.3521, 103.8198]} icon={hubIcon}>
             <Popup>Central Hub</Popup>
           </Marker>

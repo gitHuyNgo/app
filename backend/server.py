@@ -164,6 +164,27 @@ class RouteRecord(BaseModel):
     created_at: str = Field(default_factory=now_iso)
 
 
+class Hub(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    address: str = ""
+    lat: float
+    lng: float
+    is_default: bool = False
+    notes: str = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class HubIn(BaseModel):
+    name: str
+    address: Optional[str] = ""
+    lat: float
+    lng: float
+    is_default: Optional[bool] = False
+    notes: Optional[str] = ""
+
+
 # ───────────────────────────── Helpers ─────────────────────────────
 def haversine(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     R = 6371000.0
@@ -192,12 +213,73 @@ async def unique_phone(coll, phone, exclude_id=None):
 
 
 # ───────────────────────────── Root ─────────────────────────────
-HUB_LOCATION = {"lat": 1.3521, "lng": 103.8198, "name": "Central Singapore Hub"}
+DEFAULT_HUB = {"lat": 1.3521, "lng": 103.8198, "name": "Central Singapore Hub"}
+
+
+async def get_active_hub(hub_id: Optional[str] = None) -> dict:
+    """Return the chosen hub or the default (is_default=True) or the first one, else fallback constant."""
+    if hub_id:
+        h = await find_one("hubs", {"id": hub_id})
+        if h:
+            return h
+    h = await find_one("hubs", {"is_default": True})
+    if h:
+        return h
+    h = await db.hubs.find_one({}, {"_id": 0})
+    if h:
+        return h
+    return {"id": "default", "name": DEFAULT_HUB["name"], "lat": DEFAULT_HUB["lat"], "lng": DEFAULT_HUB["lng"]}
 
 
 @api.get("/")
 async def root():
-    return {"service": "LionCity AI-Logistics", "hub": HUB_LOCATION}
+    hub = await get_active_hub()
+    return {"service": "LionCity AI-Logistics", "hub": hub}
+
+
+# ───────────────────────────── Hubs (multiple locations) ─────────────────────────────
+@api.post("/hubs", response_model=Hub)
+async def create_hub(data: HubIn):
+    h = Hub(**data.model_dump())
+    if h.is_default:
+        await db.hubs.update_many({}, {"$set": {"is_default": False}})
+    await db.hubs.insert_one(h.model_dump())
+    # ensure at least one default exists
+    if not await db.hubs.find_one({"is_default": True}, {"_id": 0}):
+        await db.hubs.update_one({"id": h.id}, {"$set": {"is_default": True}})
+        h.is_default = True
+    return h
+
+
+@api.get("/hubs", response_model=List[Hub])
+async def list_hubs():
+    return await find_list("hubs")
+
+
+@api.put("/hubs/{hid}", response_model=Hub)
+async def update_hub(hid: str, data: HubIn):
+    if data.is_default:
+        await db.hubs.update_many({"id": {"$ne": hid}}, {"$set": {"is_default": False}})
+    res = await db.hubs.find_one_and_update(
+        {"id": hid}, {"$set": data.model_dump()}, return_document=True, projection={"_id": 0}
+    )
+    if not res:
+        raise HTTPException(404, "Not found")
+    return res
+
+
+@api.delete("/hubs/{hid}")
+async def delete_hub(hid: str):
+    target = await find_one("hubs", {"id": hid})
+    if not target:
+        raise HTTPException(404, "Not found")
+    await db.hubs.delete_one({"id": hid})
+    # if we deleted the default, promote another
+    if target.get("is_default"):
+        any_hub = await db.hubs.find_one({}, {"_id": 0})
+        if any_hub:
+            await db.hubs.update_one({"id": any_hub["id"]}, {"$set": {"is_default": True}})
+    return {"ok": True}
 
 
 # ───────────────────────────── FR-01 / FR-02 Hub Managers ─────────────────────────────
@@ -559,6 +641,8 @@ async def assign_auto():
     # prefer drivers with a vehicle
     drivers.sort(key=lambda d: (d.get("vehicle_id") is None, d.get("name", "")))
 
+    hub = await get_active_hub()
+
     assignments = []
     used_drivers = set()
     for pc in pending_clusters:
@@ -572,7 +656,7 @@ async def assign_auto():
             zone = None
             if drv.get("zone_id"):
                 zone = await find_one("zones", {"id": drv["zone_id"]})
-            ref = (zone["center"][0], zone["center"][1]) if zone else (HUB_LOCATION["lat"], HUB_LOCATION["lng"])
+            ref = (zone["center"][0], zone["center"][1]) if zone else (hub["lat"], hub["lng"])
             dist = haversine(ref, (c["centroid"][0], c["centroid"][1]))
             if dist < best_d:
                 best_d = dist
@@ -735,6 +819,7 @@ def _fallback_route(ordered_points: List[Tuple[float, float]], avoid_cbd: bool =
 class RoutePlanIn(BaseModel):
     driver_id: str
     mode: Literal["time", "eco", "avoid_erp"] = "time"
+    hub_id: Optional[str] = None
 
 
 @api.post("/routing/plan")
@@ -750,7 +835,8 @@ async def routing_plan(body: RoutePlanIn):
     if not orders:
         raise HTTPException(400, "No active orders for this driver")
 
-    start = (HUB_LOCATION["lat"], HUB_LOCATION["lng"])
+    hub = await get_active_hub(body.hub_id)
+    start = (hub["lat"], hub["lng"])
     stops = [(o["lat"], o["lng"]) for o in orders]
 
     # Always compute nearest-neighbor ordering (anchor on hub)
@@ -923,6 +1009,27 @@ async def lta_taxi():
     return await fetch_lta("Taxi-Availability")
 
 
+# Geocoding (best-effort using OpenStreetMap Nominatim; may be blocked in some envs)
+@api.get("/geocode")
+async def geocode(q: str = Query(..., min_length=3)):
+    try:
+        async with httpx.AsyncClient(timeout=5, headers={"User-Agent": "LionCity-AI-Logistics/1.0"}) as ch:
+            r = await ch.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": q, "format": "json", "limit": 5, "countrycodes": "sg"},
+            )
+            if r.status_code != 200:
+                return {"results": [], "error": f"Geocoder HTTP {r.status_code}"}
+            data = r.json()
+            return {"results": [
+                {"name": d.get("display_name"), "lat": float(d["lat"]), "lng": float(d["lon"])}
+                for d in data
+            ]}
+    except Exception as e:
+        logger.info("Geocode failed: %s", e)
+        return {"results": [], "error": "Geocoder unreachable — drag the pin on the map instead."}
+
+
 # ───────────────────────────── Dashboard / Seed ─────────────────────────────
 @api.get("/stats")
 async def stats():
@@ -947,8 +1054,20 @@ async def stats():
 @api.post("/seed")
 async def seed_demo():
     # Clear
-    for c in ["hub_managers", "drivers", "vehicles", "zones", "orders", "clusters", "routes"]:
+    for c in ["hub_managers", "drivers", "vehicles", "zones", "orders", "clusters", "routes", "hubs"]:
         await db[c].delete_many({})
+
+    # Hubs — 3 across Singapore
+    hubs_seed = [
+        ("Central Hub · Queenstown", "1 Tanglin Rd, Singapore 247905", 1.3053, 103.8198, True),
+        ("East Hub · Tampines", "10 Tampines Central, Singapore 529538", 1.3540, 103.9430, False),
+        ("West Hub · Jurong", "1 Jurong Gateway Rd, Singapore 608549", 1.3331, 103.7426, False),
+    ]
+    hub_ids = []
+    for name, addr, lat, lng, is_def in hubs_seed:
+        h = Hub(name=name, address=addr, lat=lat, lng=lng, is_default=is_def)
+        await db.hubs.insert_one(h.model_dump())
+        hub_ids.append(h.id)
 
     # Hub managers
     hms = [
@@ -1051,6 +1170,7 @@ async def seed_demo():
 
     return {
         "ok": True,
+        "hubs": len(hub_ids),
         "hub_managers": len(hm_ids),
         "drivers": len(driver_ids),
         "vehicles": len(vehicle_ids),

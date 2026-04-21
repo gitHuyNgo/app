@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Users, Truck, Map, Package, Route as RouteIcon, UserCircle2, RefreshCw, RadioTower,
+  LayoutDashboard, Users, Truck, Map, Package, Route as RouteIcon, UserCircle2, RefreshCw, RadioTower, Warehouse,
 } from "lucide-react";
 import { http } from "./lib/api";
 import Overview from "./pages/Overview";
@@ -12,6 +12,7 @@ import Zones from "./pages/Zones";
 import Orders from "./pages/Orders";
 import Routing from "./pages/Routing";
 import Shipper from "./pages/Shipper";
+import Hubs from "./pages/Hubs";
 import "./App.css";
 
 const NAV = [
@@ -24,6 +25,7 @@ const NAV = [
     { to: "/drivers", label: "Drivers", icon: Users },
     { to: "/vehicles", label: "Fleet", icon: Truck },
     { to: "/zones", label: "Zones", icon: Map },
+    { to: "/hubs", label: "Hubs", icon: Warehouse },
   ]},
   { group: "Admin & Field", items: [
     { to: "/hub-managers", label: "Hub Managers", icon: UserCircle2 },
@@ -82,6 +84,7 @@ function TopBar() {
     "/drivers": "Drivers",
     "/vehicles": "Fleet",
     "/zones": "Zones",
+    "/hubs": "Hubs",
     "/orders": "Orders & Dispatch",
     "/routing": "Route Planning",
     "/shipper": "Shipper Cockpit",
@@ -136,6 +139,7 @@ function Shell() {
             <Route path="/drivers" element={<Drivers />} />
             <Route path="/vehicles" element={<Vehicles />} />
             <Route path="/zones" element={<Zones />} />
+            <Route path="/hubs" element={<Hubs />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/routing" element={<Routing />} />
             <Route path="/shipper" element={<Shipper />} />
