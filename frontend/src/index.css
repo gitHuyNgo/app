@@ -31,6 +31,13 @@ html, body, #root {
   font-feature-settings: "cv11", "ss01";
 }
 
+/* Hide any "Made with Emergent" badge, just in case */
+#emergent-badge,
+a[href*="emergent.sh"][id*="badge"],
+a[href*="emergent-badge"] {
+  display: none !important;
+}
+
 * { box-sizing: border-box; }
 
 .sg-title {
