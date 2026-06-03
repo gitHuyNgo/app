@@ -82,8 +82,12 @@ async def seed_demo() -> Dict[str, Any]:
         hub_ids.append(hub.id)
 
     hm_ids: List[str] = []
-    for name, phone, hub_name in HUB_MANAGERS:
-        hub_manager = HubManager(name=name, phone=phone, hub_name=hub_name)
+    for i, (name, phone, hub_name) in enumerate(HUB_MANAGERS):
+        # Link to the seeded hub at the same index (fallback to first hub).
+        idx = min(i, len(hub_ids) - 1) if hub_ids else None
+        hub_id = hub_ids[idx] if idx is not None else None
+        seeded_hub_name = HUBS[idx][0] if idx is not None else hub_name
+        hub_manager = HubManager(name=name, phone=phone, hub_id=hub_id, hub_name=seeded_hub_name)
         await db.hub_managers.insert_one(hub_manager.model_dump())
         hm_ids.append(hub_manager.id)
 

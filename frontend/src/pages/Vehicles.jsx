@@ -16,12 +16,28 @@ export default function Vehicles() {
   };
   useEffect(() => { load(); }, []);
 
+  const [assignErr, setAssignErr] = useState("");
+
   const create = async () => { await http.post("/vehicles", form); setOpen(false); load(); };
   const remove = async (id) => { if (!window.confirm("Delete this vehicle?")) return; await http.delete(`/vehicles/${id}`); load(); };
-  const assign = async () => { await http.post(`/vehicles/${assignOpen.id}/assign`, { driver_id: assignDriverId }); setAssignOpen(null); setAssignDriverId(""); load(); };
+  const assign = async () => {
+    try {
+      setAssignErr("");
+      await http.post(`/vehicles/${assignOpen.id}/assign`, { driver_id: assignDriverId });
+      setAssignOpen(null); setAssignDriverId(""); load();
+    } catch (e) {
+      setAssignErr(e.response?.data?.detail || "Error assigning driver");
+    }
+  };
   const unassign = async (v) => { await http.post(`/vehicles/${v.id}/unassign`); load(); };
 
   const dById = Object.fromEntries(drivers.map(d => [d.id, d]));
+
+  // License-to-vehicle matrix: motorbike→A/B, van→B/C
+  const allowedLicenses = (type) => (type === "motorbike" ? ["A", "B"] : type === "van" ? ["B", "C"] : []);
+  const eligibleDrivers = assignOpen
+    ? drivers.filter(d => allowedLicenses(assignOpen.type).includes(d.license_type))
+    : [];
 
   return (
     <div>
@@ -94,16 +110,32 @@ export default function Vehicles() {
             onChange={e => setForm({ ...form, capacity_kg: parseFloat(e.target.value) || 0 })} /></div>
       </Modal>
 
-      <Modal open={!!assignOpen} title={`Assign ${assignOpen?.plate || ""}`} onClose={() => setAssignOpen(null)}
+      <Modal open={!!assignOpen} title={`Assign ${assignOpen?.plate || ""}`} onClose={() => { setAssignOpen(null); setAssignErr(""); }}
         footer={<>
-          <button className="btn" onClick={() => setAssignOpen(null)}>Cancel</button>
+          <button className="btn" onClick={() => { setAssignOpen(null); setAssignErr(""); }}>Cancel</button>
           <button className="btn primary" disabled={!assignDriverId} onClick={assign} data-testid="confirm-assign-vehicle-btn">Assign</button>
         </>}>
-        <div className="field"><label className="label">Driver</label>
+        <div className="field">
+          <label className="label">Driver</label>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
+            {assignOpen?.type === "motorbike" && "Motorbike — only License A or B drivers shown"}
+            {assignOpen?.type === "van" && "Van — only License B or C drivers shown"}
+          </div>
           <select className="select" data-testid="veh-assign-driver" value={assignDriverId} onChange={(e) => setAssignDriverId(e.target.value)}>
             <option value="">— select —</option>
-            {drivers.map(d => <option key={d.id} value={d.id}>{d.name}{d.vehicle_id ? ` (re-assign from another vehicle)` : ""}</option>)}
-          </select></div>
+            {eligibleDrivers.map(d => (
+              <option key={d.id} value={d.id}>
+                {d.name} · License {d.license_type}{d.vehicle_id ? ` (re-assign)` : ""}
+              </option>
+            ))}
+          </select>
+          {eligibleDrivers.length === 0 && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6, color: "#b91c1c" }}>
+              No drivers with a compatible license available.
+            </div>
+          )}
+          {assignErr && <div style={{ color: "#b91c1c", fontSize: 12, marginTop: 6 }} data-testid="assign-err">{assignErr}</div>}
+        </div>
       </Modal>
     </div>
   );

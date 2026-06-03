@@ -14,6 +14,7 @@ class HubManager(MongoModel):
     name: str
     phone: str
     status: HubManagerStatus = "available"
+    hub_id: Optional[str] = None
     hub_name: Optional[str] = None
 
 
@@ -21,4 +22,5 @@ class HubManagerIn(BaseModel):
     name: str
     phone: str
     status: Optional[HubManagerStatus] = "available"
+    hub_id: Optional[str] = None
     hub_name: Optional[str] = None

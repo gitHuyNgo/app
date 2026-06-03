@@ -4,22 +4,46 @@ import { Modal, Badge } from "../components/UI";
 
 export default function HubManagers() {
   const [rows, setRows] = useState([]);
+  const [hubs, setHubs] = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "", hub_name: "", status: "available" });
+  const [form, setForm] = useState({ name: "", phone: "", hub_id: "", status: "available" });
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
 
-  const load = async () => { const r = await http.get("/hub-managers"); setRows(r.data); };
+  const load = async () => {
+    const [r, h] = await Promise.all([http.get("/hub-managers"), http.get("/hubs")]);
+    setRows(r.data);
+    setHubs(h.data);
+  };
   useEffect(() => { load(); }, []);
 
-  const openNew = () => { setEditing(null); setForm({ name: "", phone: "", hub_name: "", status: "available" }); setOpen(true); setErr(""); };
-  const openEdit = (hm) => { setEditing(hm); setForm({ name: hm.name, phone: hm.phone, hub_name: hm.hub_name || "", status: hm.status }); setOpen(true); setErr(""); };
+  const openNew = () => {
+    setEditing(null);
+    setForm({ name: "", phone: "", hub_id: "", status: "available" });
+    setOpen(true); setErr("");
+  };
+  const openEdit = (hm) => {
+    setEditing(hm);
+    setForm({
+      name: hm.name,
+      phone: hm.phone,
+      hub_id: hm.hub_id || "",
+      status: hm.status,
+    });
+    setOpen(true); setErr("");
+  };
 
   const save = async () => {
     try {
       setErr("");
-      if (editing) await http.put(`/hub-managers/${editing.id}`, form);
-      else await http.post("/hub-managers", form);
+      const payload = {
+        name: form.name,
+        phone: form.phone,
+        status: form.status,
+        hub_id: form.hub_id || null,
+      };
+      if (editing) await http.put(`/hub-managers/${editing.id}`, payload);
+      else await http.post("/hub-managers", payload);
       setOpen(false); await load();
     } catch (e) { setErr(e.response?.data?.detail || "Error"); }
   };
@@ -65,14 +89,33 @@ export default function HubManagers() {
           <input className="input" data-testid="hm-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
         <div className="field"><label className="label">Phone (unique)</label>
           <input className="input" data-testid="hm-phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
-        <div className="field"><label className="label">Hub name</label>
-          <input className="input" data-testid="hm-hub" value={form.hub_name} onChange={e => setForm({ ...form, hub_name: e.target.value })} /></div>
+        <div className="field">
+          <label className="label">Hub</label>
+          <select
+            className="select"
+            data-testid="hm-hub"
+            value={form.hub_id}
+            onChange={e => setForm({ ...form, hub_id: e.target.value })}
+          >
+            <option value="">— select hub —</option>
+            {hubs.map(h => (
+              <option key={h.id} value={h.id}>
+                {h.name}{h.is_default ? " (default)" : ""}
+              </option>
+            ))}
+          </select>
+          {hubs.length === 0 && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6, color: "#b91c1c" }}>
+              No hubs found. Create a Hub first under the Hubs page.
+            </div>
+          )}
+        </div>
         <div className="field"><label className="label">Status</label>
           <select className="select" data-testid="hm-status" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
             <option value="available">Available</option>
             <option value="off_duty">Off-duty</option>
           </select></div>
-        {err && <div style={{ color: "#b91c1c", fontSize: 12 }}>{err}</div>}
+        {err && <div style={{ color: "#b91c1c", fontSize: 12 }} data-testid="hm-err">{err}</div>}
       </Modal>
     </div>
   );

@@ -43,6 +43,24 @@ async def assign_vehicle(vehicle_id: str, body: AssignVehicleIn) -> dict:
     if not vehicle or not driver:
         raise HTTPException(status_code=404, detail="Vehicle or driver not found")
 
+    # License-to-vehicle compatibility matrix:
+    #  - License A → Motorbike only
+    #  - License B → Motorbike or Van
+    #  - License C → Van only
+    compatibility = {
+        "motorbike": {"A", "B"},
+        "van": {"B", "C"},
+    }
+    allowed = compatibility.get(vehicle["type"], set())
+    if driver.get("license_type") not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Driver license {driver.get('license_type')} is not allowed to operate "
+                f"a {vehicle['type']}. Allowed licenses: {', '.join(sorted(allowed))}."
+            ),
+        )
+
     # Enforce "one driver per vehicle" — unassign previous links on both sides.
     if driver.get("vehicle_id"):
         await db.vehicles.update_one(
