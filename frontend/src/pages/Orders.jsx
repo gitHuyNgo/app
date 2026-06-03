@@ -106,8 +106,12 @@ export default function Orders() {
   };
   const doCluster = async () => {
     setBusy(true);
-    const r = await http.post("/orders/cluster", { max_distance_m: 2500 });
-    setToast(`Created ${r.data.count || 0} clusters`); await load(); setBusy(false);
+    const r = await http.post("/orders/cluster", {});
+    const { count = 0, unassigned = 0, message } = r.data || {};
+    let msg = `Clustering done · ${count} cluster${count === 1 ? "" : "s"}`;
+    if (unassigned > 0) msg += ` · ${unassigned} order${unassigned === 1 ? "" : "s"} outside any zone`;
+    if (message && count === 0) msg = message;
+    setToast(msg); await load(); setBusy(false);
   };
   const doAuto = async () => {
     setBusy(true);
@@ -194,21 +198,29 @@ export default function Orders() {
         <div>
           <div className="toolbar">
             <button className="btn primary" data-testid="run-cluster-btn" disabled={busy} onClick={doCluster}>⚙ Run Clustering</button>
-            <span className="muted" style={{ fontSize: 12 }}>Groups pending orders by postal-code sector + 2.5 km radius</span>
+            <span className="muted" style={{ fontSize: 12 }}>Groups orders by zone (point-in-polygon) and picks the closest hub inside that zone</span>
           </div>
           <div className="section">
             <div className="card" style={{ padding: 0 }}>
               <table className="tbl" data-testid="clusters-table">
-                <thead><tr><th>Label</th><th>Orders</th><th>Centroid</th></tr></thead>
+                <thead><tr><th>Order Code</th><th>Address</th><th>Zone</th><th>Hub</th></tr></thead>
                 <tbody>
-                  {clusters.map(c => (
-                    <tr key={c.id}>
-                      <td style={{ fontWeight: 600 }}>{c.label}</td>
-                      <td>{c.order_ids.length}</td>
-                      <td className="muted">{c.centroid[0].toFixed(3)}, {c.centroid[1].toFixed(3)}</td>
-                    </tr>
-                  ))}
-                  {clusters.length === 0 && <tr><td colSpan={3} style={{ padding: 20, textAlign: "center", color: "#64748b" }}>Run clustering to group pending orders.</td></tr>}
+                  {orders
+                    .filter(o => o.cluster_id)
+                    .map(o => {
+                      const c = cById[o.cluster_id];
+                      return (
+                        <tr key={o.id} data-testid={`cluster-row-${o.id}`}>
+                          <td style={{ fontWeight: 600 }}>{o.code}</td>
+                          <td>{o.address}</td>
+                          <td>{c?.zone_name ? <span className="chip">{c.zone_name}</span> : <span className="muted">—</span>}</td>
+                          <td>{c?.hub_name ? <span className="chip" data-testid={`cluster-hub-${o.id}`}>{c.hub_name}</span> : <span className="muted">—</span>}</td>
+                        </tr>
+                      );
+                    })}
+                  {orders.filter(o => o.cluster_id).length === 0 && (
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "#64748b" }}>Run clustering to assign each pending order to its zone & nearest hub.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -237,21 +249,31 @@ export default function Orders() {
                 <th><input type="checkbox" data-testid="select-all-orders"
                   checked={selected.length === pendingOrders.length && pendingOrders.length > 0}
                   onChange={(e) => setSelected(e.target.checked ? pendingOrders.map(o => o.id) : [])} /></th>
-                <th>Code</th><th>Address</th><th>Cluster</th><th>Driver</th><th>Status</th>
+                <th>Code</th><th>Address</th><th>Zone / Hub</th><th>Driver</th><th>Status</th>
               </tr></thead>
               <tbody>
-                {orders.map(o => (
+                {orders.map(o => {
+                  const c = cById[o.cluster_id];
+                  return (
                   <tr key={o.id}>
                     <td><input type="checkbox" data-testid={`select-order-${o.id}`}
                       disabled={o.status !== "pending"}
                       checked={selected.includes(o.id)} onChange={() => toggleSel(o.id)} /></td>
                     <td style={{ fontWeight: 600 }}>{o.code}</td>
                     <td>{o.address}</td>
-                    <td>{o.cluster_id ? <span className="chip">{cById[o.cluster_id]?.label || o.cluster_id.slice(0,6)}</span> : <span className="muted">—</span>}</td>
+                    <td>
+                      {c ? (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          {c.zone_name && <span className="chip">{c.zone_name}</span>}
+                          {c.hub_name && <span className="chip" data-testid={`assign-hub-${o.id}`}>{c.hub_name}</span>}
+                        </div>
+                      ) : <span className="muted">—</span>}
+                    </td>
                     <td>{o.driver_id ? <span className="chip">{dById[o.driver_id]?.name || "driver"}</span> : <span className="muted">—</span>}</td>
                     <td><Badge tone={o.status}>{o.status}</Badge></td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

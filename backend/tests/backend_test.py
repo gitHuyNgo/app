@@ -400,25 +400,30 @@ class TestGeocode:
 # ───── NEW: Routing with explicit hub_id ─────
 class TestRoutingWithHub:
     def test_plan_with_non_default_hub(self, client):
+        """NEW behavior: hub_id in body must be IGNORED — origin is derived from cluster."""
         client.post(f"{API}/orders/cluster", json={"max_distance_m": 3000})
         client.post(f"{API}/orders/assign-auto")
         orders = client.get(f"{API}/orders").json()
         assigned = [o for o in orders if o.get("driver_id") and o["status"] == "assigned"]
         if not assigned:
             pytest.skip("No assigned orders")
-        did = assigned[0]["driver_id"]
+        o0 = assigned[0]
+        did = o0["driver_id"]
+        clusters = client.get(f"{API}/clusters").json()
+        c = next((c for c in clusters if c["id"] == o0.get("cluster_id")), None)
         hubs = client.get(f"{API}/hubs").json()
         non_default = [h for h in hubs if not h.get("is_default")]
-        if not non_default:
-            pytest.skip("No non-default hub")
-        hub = non_default[0]
-        r = client.post(f"{API}/routing/plan", json={"driver_id": did, "mode": "eco", "hub_id": hub["id"]}, timeout=30)
+        if not non_default or not c:
+            pytest.skip("No non-default hub or cluster")
+        bogus = non_default[0]
+        r = client.post(f"{API}/routing/plan", json={"driver_id": did, "mode": "eco", "hub_id": bogus["id"]}, timeout=30)
         assert r.status_code == 200, r.text
         route = r.json()
         assert len(route["waypoints"]) >= 2
         start = route["waypoints"][0]
-        # first waypoint should be the chosen hub
-        assert abs(start[0] - hub["lat"]) < 1e-4 and abs(start[1] - hub["lng"]) < 1e-4
+        # First waypoint must match the CLUSTER's hub, not the body's hub_id
+        cluster_hub = next(h for h in hubs if h["id"] == c["hub_id"])
+        assert abs(start[0] - cluster_hub["lat"]) < 1e-4 and abs(start[1] - cluster_hub["lng"]) < 1e-4
 
     def test_plan_without_hub_uses_default(self, client):
         orders = client.get(f"{API}/orders").json()

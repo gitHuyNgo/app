@@ -1,6 +1,7 @@
 """Routing endpoints (FR-17, FR-18)."""
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, HTTPException
@@ -84,7 +85,18 @@ async def plan_route(body: RoutePlanIn) -> RouteRecord:
     if not orders:
         raise HTTPException(status_code=400, detail="No active orders for this driver")
 
-    hub = await get_active_hub(body.hub_id)
+    # Derive the journey origin from the cluster the orders belong to.
+    # If orders span multiple clusters, pick the most common one. Fall back to
+    # the system default hub when an order has no cluster (legacy / manual).
+    cluster_ids = [o.get("cluster_id") for o in orders if o.get("cluster_id")]
+    hub: Dict[str, Any] | None = None
+    if cluster_ids:
+        most_common_cluster_id, _ = Counter(cluster_ids).most_common(1)[0]
+        cluster = await find_one("clusters", {"id": most_common_cluster_id})
+        if cluster and cluster.get("hub_id"):
+            hub = await find_one("hubs", {"id": cluster["hub_id"]})
+    if not hub:
+        hub = await get_active_hub()
     start: Tuple[float, float] = (hub["lat"], hub["lng"])
     stops: List[Tuple[float, float]] = [(o["lat"], o["lng"]) for o in orders]
 

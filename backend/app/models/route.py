@@ -1,7 +1,7 @@
 """Route record + routing request schemas (FR-17, FR-18)."""
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import List, Literal
 
 from pydantic import BaseModel
 
@@ -23,7 +23,6 @@ class RouteRecord(MongoModel):
 class RoutePlanIn(BaseModel):
     driver_id: str
     mode: RouteMode = "time"
-    hub_id: Optional[str] = None
 
 
 class SimulateStepIn(BaseModel):

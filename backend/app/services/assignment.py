@@ -45,10 +45,14 @@ async def _eligible_drivers_for_cluster(
     drivers: List[Dict[str, Any]],
     vehicles_by_id: Dict[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Filter drivers to those whose vehicle fits the cluster (license + capacity)."""
+    """Filter drivers to those who work in the cluster's zone AND whose vehicle fits."""
     eligible: List[Dict[str, Any]] = []
     weight = cluster.get("total_weight_kg") or 0.0
+    cluster_zone = cluster.get("zone_id")
     for driver in drivers:
+        # HARD zone-of-working filter — drivers only handle clusters in their own zone.
+        if cluster_zone and driver.get("zone_id") != cluster_zone:
+            continue
         vehicle_id = driver.get("vehicle_id")
         if not vehicle_id:
             continue
@@ -137,7 +141,9 @@ async def assign_clusters_to_drivers() -> Dict[str, Any]:
             skipped.append({
                 "cluster_id": cluster["id"],
                 "cluster_label": cluster["label"],
-                "reason": "No eligible driver — check capacity / license / availability.",
+                "reason": "No eligible driver in this zone — check zone, license, capacity, availability.",
+                "zone_id": cluster.get("zone_id"),
+                "hub_id": cluster.get("hub_id"),
                 "total_weight_kg": cluster.get("total_weight_kg"),
             })
             continue

@@ -1,0 +1,45 @@
+{
+  "summary": "Iter-6 full verification of the zone+hub clustering overhaul. Backend: 12 new pytest cases (test_iter6_clustering.py) all pass; full regression 73 pass / 1 skipped. Frontend: Clustering tab shows the new 4-column table (Order Code | Address | Zone | Hub) with cluster-hub chips, Assignment tab shows 'Zone / Hub' column with hub chips and auto-assignment populates them, Route Planning page no longer has routing-hub selector and /api/routing/plan request body contains only driver_id+mode. The seeded golden path is exactly as specified — ORD-00001/00005/00006 cluster to Central CBD / Central Hub · Queenstown, ORD-00010 to North-West / West Hub · Jurong. Strict zone-of-working assignment enforced (driver.zone_id == cluster.zone_id). One legacy test in backend_test.py (test_plan_with_non_default_hub) was updated to reflect the new spec where hub_id in body is intentionally ignored.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_clustering.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_p0_features.py",
+    "/app/test_reports/pytest/iter6_full.xml",
+    "/app/test_reports/pytest/iter6_clustering.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/clustering.py correctly implements the spec: point-in-polygon zone lookup, hubs-inside-zone filter, fallback to nearest hub overall when a zone has no hub inside, and (zone, hub) bucket as the cluster key. Centroid/total weight populated; zone_id is persisted onto the order doc for downstream filtering.",
+    "services/clustering.py preserves clusters that hold non-pending orders by id ($nin keep_ids) before deleting — re-clustering after assign-auto correctly retains the in-flight clusters so the route planner can still resolve their hub.",
+    "services/assignment.py::_eligible_drivers_for_cluster hard-filters by driver.zone_id == cluster.zone_id BEFORE vehicle/license/capacity checks — this is the correct order and matches the spec.",
+    "Skipped entries in assign-auto carry zone_id, hub_id, total_weight_kg — useful for ops UI diagnostics.",
+    "routers/routing.py uses Counter().most_common(1) on cluster_ids to derive the origin hub from the most common cluster in the driver's active orders, falling back to get_active_hub() — clean, predictable.",
+    "models/route.py::RoutePlanIn drops hub_id — Pydantic's default config ignores unknown fields, so passing hub_id from a stale client does not raise (verified end-to-end).",
+    "models/cluster.py adds hub_id, hub_name, zone_name — all Optional[str] for backward compatibility.",
+    "Frontend Orders.jsx::clustering table iterates orders.filter(o => o.cluster_id) so unclustered (out-of-zone) orders are correctly hidden from the new view — matches the spec.",
+    "Frontend Routing.jsx no longer renders <select data-testid='routing-hub'> — confirmed via DOM query (count == 0). plan() sends only driver_id+mode."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_clustering.py (new — 12 cases)",
+    "/app/backend/tests/backend_test.py (updated TestRoutingWithHub::test_plan_with_non_default_hub to reflect new behavior — hub_id in body must be ignored and route start must equal the cluster's hub)"
+  ],
+  "success_rate": {
+    "backend": "100% (73 passed / 1 skipped — no failures across 3 test files)",
+    "frontend": "100% (Clustering, Assignment, Routing, plus 7-page regression nav all clean)"
+  },
+  "test_credentials": "N/A — no auth",
+  "seed_data_creation": "Used existing POST /api/seed (3 hubs, 3 zones, 6 drivers, 6 vehicles, 15 orders). Note: all 3 seeded hubs are physically OUTSIDE every zone polygon, so the 'hubs inside zone' branch never fires for the default dataset; the code path that's actually exercised is the 'no hub inside zone → fall back to nearest hub overall' branch — and that's still correct per spec (Central Hub is the nearest to Central CBD orders, West Hub is the nearest to North-West orders). If main agent wants to also exercise the 'hub-inside-zone' branch in tests, the zone polygons would need to be enlarged or a hub placed inside one.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2) python -m pytest backend/tests/ -v. Three test files: backend_test.py (47 historical + 1 reworked), test_p0_features.py (15 license/HM), test_iter6_clustering.py (12 zone+hub clustering). Frontend testids of interest: tab-clustering, tab-assignment, run-cluster-btn, cluster-row-{order_id}, cluster-hub-{order_id}, assign-hub-{order_id}, auto-assign-btn, routing-driver, routing-mode, plan-route-btn. routing-hub has been removed and MUST NOT be re-introduced. Sidebar nav label for routing is 'Route Planning', not 'Routing'.",
+  "rca of the issue": "N/A — no bugs. The single pre-existing test failure (test_plan_with_non_default_hub) was a stale assertion for the OLD behavior where hub_id in the body overrode the origin hub. New spec: hub_id is ignored and origin is derived from the cluster's hub. Test was updated, not the production code."
+}

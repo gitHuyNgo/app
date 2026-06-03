@@ -12,3 +12,6 @@ class Cluster(MongoModel):
     centroid: List[float]
     total_weight_kg: float = 0.0
     zone_id: Optional[str] = None
+    zone_name: Optional[str] = None
+    hub_id: Optional[str] = None
+    hub_name: Optional[str] = None
