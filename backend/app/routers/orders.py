@@ -9,6 +9,7 @@ from app.database import db
 from app.models.order import ClusterIn, ManualAssignIn, Order, OrderIn, OrderStatusIn
 from app.services.assignment import assign_clusters_to_drivers
 from app.services.clustering import cluster_pending_orders
+from app.services.zones import find_zone_for_point
 from app.utils import find_list, find_one
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -17,7 +18,12 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 @router.post("", response_model=Order)
 async def create_order(data: OrderIn) -> Order:
     count = await db.orders.count_documents({})
-    order = Order(code=f"ORD-{count + 1:05d}", **data.model_dump())
+    zone_id = await find_zone_for_point(data.lat, data.lng)
+    order = Order(
+        code=f"ORD-{count + 1:05d}",
+        zone_id=zone_id,
+        **data.model_dump(),
+    )
     await db.orders.insert_one(order.model_dump())
     return order
 

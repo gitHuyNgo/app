@@ -433,3 +433,209 @@ class TestRoutingWithHub:
         assert r.status_code == 200
         start = r.json()["waypoints"][0]
         assert abs(start[0] - default["lat"]) < 1e-4 and abs(start[1] - default["lng"]) < 1e-4
+
+
+
+# ───── NEW: Driver ↔ Zone bidirectional sync ─────
+class TestDriverZoneSync:
+    """Driver create / update / delete must keep zones.driver_ids consistent."""
+
+    def _make_zone(self, client, name="TEST_ZSync_A", color="#aa0000",
+                   polygon=None):
+        polygon = polygon or [[1.40, 103.80], [1.40, 103.85],
+                              [1.38, 103.85], [1.38, 103.80]]
+        r = client.post(f"{API}/zones", json={
+            "name": name, "polygon": polygon, "color": color,
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_create_driver_with_zone_adds_to_zone(self, client):
+        z = self._make_zone(client, name="TEST_ZSync_Create")
+        try:
+            r = client.post(f"{API}/drivers", json={
+                "name": "TEST_DZ_Create", "phone": "+6599881111",
+                "license_type": "B", "zone_id": z["id"],
+            })
+            assert r.status_code == 200, r.text
+            drv = r.json()
+            assert drv["zone_id"] == z["id"]
+            # verify zone now contains the driver
+            zones = client.get(f"{API}/zones").json()
+            zone_now = next(x for x in zones if x["id"] == z["id"])
+            assert drv["id"] in zone_now["driver_ids"]
+        finally:
+            client.delete(f"{API}/drivers/{drv['id']}")
+            client.delete(f"{API}/zones/{z['id']}")
+
+    def test_update_driver_moves_between_zones(self, client):
+        z1 = self._make_zone(client, name="TEST_ZSync_From",
+                             polygon=[[1.40, 103.80], [1.40, 103.82],
+                                      [1.38, 103.82], [1.38, 103.80]])
+        z2 = self._make_zone(client, name="TEST_ZSync_To", color="#0000aa",
+                             polygon=[[1.36, 103.85], [1.36, 103.87],
+                                      [1.34, 103.87], [1.34, 103.85]])
+        drv = client.post(f"{API}/drivers", json={
+            "name": "TEST_DZ_Move", "phone": "+6599881112",
+            "license_type": "B", "zone_id": z1["id"],
+        }).json()
+        try:
+            r = client.put(f"{API}/drivers/{drv['id']}", json={
+                "name": drv["name"], "phone": drv["phone"],
+                "license_type": "B", "zone_id": z2["id"],
+            })
+            assert r.status_code == 200, r.text
+            assert r.json()["zone_id"] == z2["id"]
+            zones = {x["id"]: x for x in client.get(f"{API}/zones").json()}
+            assert drv["id"] not in zones[z1["id"]]["driver_ids"], "old zone not cleaned"
+            assert drv["id"] in zones[z2["id"]]["driver_ids"], "new zone not updated"
+        finally:
+            client.delete(f"{API}/drivers/{drv['id']}")
+            client.delete(f"{API}/zones/{z1['id']}")
+            client.delete(f"{API}/zones/{z2['id']}")
+
+    def test_delete_driver_removes_from_zone(self, client):
+        z = self._make_zone(client, name="TEST_ZSync_Del")
+        drv = client.post(f"{API}/drivers", json={
+            "name": "TEST_DZ_Del", "phone": "+6599881113",
+            "license_type": "B", "zone_id": z["id"],
+        }).json()
+        # confirm linked
+        zones = {x["id"]: x for x in client.get(f"{API}/zones").json()}
+        assert drv["id"] in zones[z["id"]]["driver_ids"]
+        # delete
+        r = client.delete(f"{API}/drivers/{drv['id']}")
+        assert r.status_code == 200
+        zones_after = {x["id"]: x for x in client.get(f"{API}/zones").json()}
+        assert drv["id"] not in zones_after[z["id"]]["driver_ids"]
+        client.delete(f"{API}/zones/{z['id']}")
+
+
+# ───── NEW: Order auto-zone tagging ─────
+class TestOrderZoneAutoTag:
+    def test_order_inside_polygon_gets_that_zone(self, client):
+        polygon = [[1.40, 103.80], [1.40, 103.82],
+                   [1.38, 103.82], [1.38, 103.80]]
+        z = client.post(f"{API}/zones", json={
+            "name": "TEST_OZ_Inside", "polygon": polygon, "color": "#abcdef",
+        }).json()
+        try:
+            # point clearly inside the polygon
+            r = client.post(f"{API}/orders", json={
+                "address": "TEST inside", "postal_code": "560123",
+                "lat": 1.39, "lng": 103.81, "weight_kg": 1.5,
+                "required_by": "2026-02-01T10:00:00Z",
+            })
+            assert r.status_code == 200, r.text
+            o = r.json()
+            assert o["zone_id"] == z["id"], f"expected {z['id']}, got {o['zone_id']}"
+            client.delete(f"{API}/orders/{o['id']}")
+        finally:
+            client.delete(f"{API}/zones/{z['id']}")
+
+    def test_order_outside_falls_back_to_nearest_centroid(self, client):
+        # All seeded + new zones — order placed far outside should fall back
+        # to the nearest zone, never None (as long as some zone exists).
+        zones = client.get(f"{API}/zones").json()
+        assert zones, "Need at least one zone"
+        r = client.post(f"{API}/orders", json={
+            "address": "TEST outside", "postal_code": "999999",
+            "lat": 1.10, "lng": 103.50, "weight_kg": 0.5,
+            "required_by": "2026-02-01T10:00:00Z",
+        })
+        assert r.status_code == 200
+        o = r.json()
+        assert o["zone_id"] is not None, "Outside point should fall back to nearest zone"
+        assert any(z["id"] == o["zone_id"] for z in zones)
+        client.delete(f"{API}/orders/{o['id']}")
+
+
+# ───── NEW: Clustering by zone + total_weight_kg ─────
+class TestClusteringByZone:
+    def test_clusters_have_weight_and_zone_and_never_span(self, client):
+        # Re-seed so we have predictable orders, then cluster
+        client.post(f"{API}/seed", timeout=30)
+        r = client.post(f"{API}/orders/cluster", json={"max_distance_m": 2500})
+        assert r.status_code == 200
+        d = r.json()
+        clusters = d["clusters"]
+        assert clusters, "Expected at least one cluster"
+        orders_by_id = {o["id"]: o for o in client.get(f"{API}/orders").json()}
+        for c in clusters:
+            # every cluster has a weight & zone
+            assert "total_weight_kg" in c
+            assert c["total_weight_kg"] >= 0
+            assert "zone_id" in c
+            # all orders in cluster share its zone (no spanning)
+            zones_in = {orders_by_id[oid]["zone_id"] for oid in c["order_ids"]
+                        if oid in orders_by_id}
+            assert len(zones_in) <= 1, f"Cluster spans zones: {zones_in}"
+            if c["zone_id"] is not None and zones_in:
+                assert zones_in == {c["zone_id"]}
+            # weight equals sum of member orders
+            expected_w = round(sum(orders_by_id[oid]["weight_kg"]
+                                   for oid in c["order_ids"]
+                                   if oid in orders_by_id), 2)
+            assert abs(c["total_weight_kg"] - expected_w) < 0.05
+
+
+# ───── NEW: Smart auto-assignment ─────
+class TestSmartAssignment:
+    def test_assignment_respects_capacity_license_returns_skipped(self, client):
+        # Fresh seed + cluster + auto-assign — inspect the response shape.
+        client.post(f"{API}/seed", timeout=30)
+        client.post(f"{API}/orders/cluster", json={"max_distance_m": 2500})
+        r = client.post(f"{API}/orders/assign-auto")
+        assert r.status_code == 200
+        body = r.json()
+        # response shape
+        assert "assignments" in body and "skipped" in body and "count" in body
+        assignments = body["assignments"]
+        assert body["count"] == len(assignments)
+        assert isinstance(body["skipped"], list)
+
+        if not assignments:
+            pytest.skip("No assignments produced — cannot validate constraints")
+
+        # capacity & license matrix
+        vehicles = {v["id"]: v for v in client.get(f"{API}/vehicles").json()}
+        drivers = {d["id"]: d for d in client.get(f"{API}/drivers").json()}
+        license_matrix = {"A": {"motorbike"},
+                          "B": {"motorbike", "van"},
+                          "C": {"van"}}
+        for a in assignments:
+            v = vehicles[a["vehicle_id"]]
+            d = drivers[a["driver_id"]]
+            assert v["capacity_kg"] >= a["cluster_weight_kg"], (
+                f"Capacity violation: vehicle {v['plate']} {v['capacity_kg']}kg "
+                f"< cluster {a['cluster_weight_kg']}kg"
+            )
+            assert v["type"] in license_matrix[d["license_type"]], (
+                f"License violation: {d['license_type']} cannot drive {v['type']}"
+            )
+            # extra metadata present
+            for key in ("utilisation_pct", "zone_match",
+                        "vehicle_fuel", "vehicle_type", "cluster_label"):
+                assert key in a
+
+    def test_assignment_zone_affinity_preferred_when_possible(self, client):
+        """At least one assignment should hit zone_match=True with seeded data
+        (the manual smoke matched 5/6 zones)."""
+        client.post(f"{API}/seed", timeout=30)
+        client.post(f"{API}/orders/cluster", json={"max_distance_m": 2500})
+        r = client.post(f"{API}/orders/assign-auto").json()
+        if not r["assignments"]:
+            pytest.skip("No assignments produced")
+        zone_hits = sum(1 for a in r["assignments"] if a.get("zone_match"))
+        # don't require all — drivers may not cover every zone — but at least one
+        assert zone_hits >= 1, "Expected at least one zone-affinity match"
+
+    def test_assignment_unique_driver_per_cluster(self, client):
+        client.post(f"{API}/seed", timeout=30)
+        client.post(f"{API}/orders/cluster", json={"max_distance_m": 2500})
+        r = client.post(f"{API}/orders/assign-auto").json()
+        if len(r["assignments"]) < 2:
+            pytest.skip("Need >=2 assignments to verify uniqueness")
+        driver_ids = [a["driver_id"] for a in r["assignments"]]
+        assert len(driver_ids) == len(set(driver_ids)), \
+            "Same driver assigned to multiple clusters"

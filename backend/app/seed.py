@@ -12,6 +12,7 @@ from app.models.order import Order
 from app.models.vehicle import Vehicle
 from app.models.zone import Zone
 from app.services.geo import polygon_centroid
+from app.services.zones import find_zone_for_point
 
 COLLECTIONS = ("hub_managers", "drivers", "vehicles", "zones", "orders", "clusters", "routes", "hubs")
 
@@ -114,7 +115,10 @@ async def seed_demo() -> Dict[str, Any]:
         await db.drivers.update_one({"id": driver_id}, {"$set": {"zone_id": zone_id}})
 
     base_time = datetime.now(timezone.utc) + timedelta(hours=6)
+    # Resolve a zone for each seeded order so the Orders list reflects zones immediately.
+    seeded_zones: list[dict] = list(await db.zones.find({}, {"_id": 0}).to_list(100))
     for index, (address, postal, lat, lng, weight) in enumerate(ORDERS):
+        order_zone = await find_zone_for_point(lat, lng, seeded_zones)
         order = Order(
             code=f"ORD-{index + 1:05d}",
             address=address,
@@ -123,6 +127,7 @@ async def seed_demo() -> Dict[str, Any]:
             lng=lng,
             weight_kg=weight,
             required_by=(base_time + timedelta(hours=index)).isoformat(),
+            zone_id=order_zone,
         )
         await db.orders.insert_one(order.model_dump())
 

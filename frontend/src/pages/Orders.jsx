@@ -112,7 +112,19 @@ export default function Orders() {
   const doAuto = async () => {
     setBusy(true);
     const r = await http.post("/orders/assign-auto");
-    setToast(`Auto-assigned ${r.data.count || 0} clusters to drivers`); await load(); setBusy(false);
+    const { count = 0, skipped = [], assignments = [] } = r.data || {};
+    let msg = `Auto-assigned ${count} cluster${count === 1 ? "" : "s"}`;
+    if (assignments.length) {
+      const evCount = assignments.filter(a => a.vehicle_fuel === "ev").length;
+      const zoneMatch = assignments.filter(a => a.zone_match).length;
+      const avgUtil = assignments.reduce((s, a) => s + (a.utilisation_pct || 0), 0) / assignments.length;
+      msg += ` · zone match ${zoneMatch}/${assignments.length} · EV ${evCount}/${assignments.length} · avg fleet utilisation ${avgUtil.toFixed(0)}%`;
+    }
+    if (skipped.length) {
+      msg += ` · ${skipped.length} skipped (no eligible driver)`;
+    }
+    setToast(msg);
+    await load(); setBusy(false);
   };
   const doManual = async () => {
     if (!manualDriver || selected.length === 0) return;

@@ -48,3 +48,21 @@ def interpolate(
         [a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps]
         for i in range(steps)
     ]
+
+
+def point_in_polygon(point: Tuple[float, float], polygon: List[List[float]]) -> bool:
+    """Ray-casting point-in-polygon test. ``polygon`` is a list of [lat, lng] vertices."""
+    if not polygon or len(polygon) < 3:
+        return False
+    x, y = point[1], point[0]  # (lng, lat) for x/y convention
+    inside = False
+    n = len(polygon)
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i][1], polygon[i][0]
+        xj, yj = polygon[j][1], polygon[j][0]
+        intersects = ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi)
+        if intersects:
+            inside = not inside
+        j = i
+    return inside

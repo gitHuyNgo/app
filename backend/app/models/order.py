@@ -19,6 +19,7 @@ class Order(MongoModel):
     weight_kg: float
     required_by: str
     status: OrderStatus = "pending"
+    zone_id: Optional[str] = None
     cluster_id: Optional[str] = None
     driver_id: Optional[str] = None
     sequence: Optional[int] = None

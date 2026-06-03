@@ -27,6 +27,7 @@ class DriverIn(BaseModel):
     phone: str
     license_type: LicenseType = "B"
     hub_manager_id: Optional[str] = None
+    zone_id: Optional[str] = None
 
 
 class DriverStatusIn(BaseModel):

@@ -26,7 +26,7 @@ export default function Vehicles() {
   return (
     <div>
       <div className="page-title"><span className="accent"></span>Fleet</div>
-      <div className="page-subtitle">FR-06 · FR-07 · FR-08 — Vehicles and driver assignment</div>
+      <div className="page-subtitle">FR-06 · FR-07 · FR-08 — Each driver owns exactly one fleet vehicle (one-to-one)</div>
 
       <div className="toolbar">
         <button className="btn primary" data-testid="add-vehicle-btn" onClick={() => { setForm({ plate: "", type: "van", fuel_type: "ev", capacity_kg: 500 }); setOpen(true); }}>+ Add Vehicle</button>
@@ -34,23 +34,37 @@ export default function Vehicles() {
 
       <div className="card" style={{ padding: 0 }}>
         <table className="tbl" data-testid="vehicles-table">
-          <thead><tr><th>Plate</th><th>Type</th><th>Fuel</th><th>Capacity</th><th>Assigned driver</th><th></th></tr></thead>
+          <thead><tr><th>Plate</th><th>Type</th><th>Fuel</th><th>Capacity</th><th>Assigned Driver</th><th></th></tr></thead>
           <tbody>
-            {vehicles.map(v => (
-              <tr key={v.id}>
-                <td style={{ fontWeight: 600 }}>{v.plate}</td>
-                <td style={{ textTransform: "capitalize" }}>{v.type}</td>
-                <td><Badge tone={v.fuel_type}>{v.fuel_type.toUpperCase()}</Badge></td>
-                <td>{v.capacity_kg} kg</td>
-                <td>{v.assigned_driver_id ? <span className="chip">{dById[v.assigned_driver_id]?.name || "driver"}</span> : <span className="muted">—</span>}</td>
-                <td style={{ textAlign: "right" }}>
-                  {!v.assigned_driver_id
-                    ? <button className="btn sm" onClick={() => { setAssignOpen(v); setAssignDriverId(""); }} data-testid={`assign-vehicle-${v.id}`}>Assign</button>
-                    : <button className="btn sm ghost" onClick={() => unassign(v)} data-testid={`unassign-vehicle-${v.id}`}>Unassign</button>}
-                  <button className="btn sm ghost" style={{ color: "#b91c1c" }} onClick={() => remove(v.id)} data-testid={`del-vehicle-${v.id}`}>Delete</button>
-                </td>
-              </tr>
-            ))}
+            {vehicles.map(v => {
+              const drv = v.assigned_driver_id ? dById[v.assigned_driver_id] : null;
+              return (
+                <tr key={v.id}>
+                  <td style={{ fontWeight: 600 }}>{v.plate}</td>
+                  <td style={{ textTransform: "capitalize" }}>{v.type}</td>
+                  <td><Badge tone={v.fuel_type}>{v.fuel_type.toUpperCase()}</Badge></td>
+                  <td>{v.capacity_kg} kg</td>
+                  <td>
+                    {drv ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ fontWeight: 600, fontSize: 12.5 }}>{drv.name}</span>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <span className="muted" style={{ fontSize: 11 }}>{drv.phone}</span>
+                          <Badge tone={drv.status}>{drv.status}</Badge>
+                          <span className="muted" style={{ fontSize: 11 }}>· License {drv.license_type}</span>
+                        </div>
+                      </div>
+                    ) : <span className="muted">Unassigned</span>}
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {!v.assigned_driver_id
+                      ? <button className="btn sm" onClick={() => { setAssignOpen(v); setAssignDriverId(""); }} data-testid={`assign-vehicle-${v.id}`}>Assign</button>
+                      : <button className="btn sm ghost" onClick={() => unassign(v)} data-testid={`unassign-vehicle-${v.id}`}>Unassign</button>}
+                    <button className="btn sm ghost" style={{ color: "#b91c1c" }} onClick={() => remove(v.id)} data-testid={`del-vehicle-${v.id}`}>Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
             {vehicles.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>No vehicles.</td></tr>}
           </tbody>
         </table>

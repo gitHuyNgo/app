@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.database import db
 from app.models.driver import Driver, DriverIn, DriverStatusIn, LocationIn
-from app.utils import find_list, now_iso, unique_phone
+from app.utils import find_list, find_one, now_iso, unique_phone
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
@@ -18,6 +18,8 @@ async def create_driver(data: DriverIn) -> Driver:
         raise HTTPException(status_code=400, detail="Phone already exists")
     driver = Driver(**data.model_dump())
     await db.drivers.insert_one(driver.model_dump())
+    if driver.zone_id:
+        await db.zones.update_one({"id": driver.zone_id}, {"$addToSet": {"driver_ids": driver.id}})
     return driver
 
 
@@ -48,6 +50,8 @@ async def list_driver_locations() -> List[dict]:
 async def update_driver(driver_id: str, data: DriverIn) -> dict:
     if not await unique_phone("drivers", data.phone, exclude_id=driver_id):
         raise HTTPException(status_code=400, detail="Phone already exists")
+
+    previous = await find_one("drivers", {"id": driver_id})
     res = await db.drivers.find_one_and_update(
         {"id": driver_id},
         {"$set": data.model_dump()},
@@ -56,6 +60,15 @@ async def update_driver(driver_id: str, data: DriverIn) -> dict:
     )
     if not res:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Keep the bidirectional zone link consistent.
+    old_zone = previous.get("zone_id") if previous else None
+    new_zone = data.zone_id
+    if old_zone != new_zone:
+        if old_zone:
+            await db.zones.update_one({"id": old_zone}, {"$pull": {"driver_ids": driver_id}})
+        if new_zone:
+            await db.zones.update_one({"id": new_zone}, {"$addToSet": {"driver_ids": driver_id}})
     return res
 
 
