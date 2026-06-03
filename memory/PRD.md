@@ -79,6 +79,10 @@ backend/
 - **Hubs (multi-location, Jan 2026)** full CRUD, pin by drag or map-click, address geocoding via OpenStreetMap Nominatim with graceful fallback, is_default flag enforced, shown on Overview map + used as routing origin
 - **License-Vehicle Compatibility (Feb 2026)** UI filter + backend 400 enforcement on `POST /api/vehicles/{id}/assign` — matrix: motorbike→{A,B}, van→{B,C}
 - **Hub-bound Hub Managers (Feb 2026)** `HubManager.hub_id` references real hub doc; create/edit modal uses dropdown sourced from `GET /api/hubs`; server resolves `hub_name` from the hub doc
+- **Zone+Hub Clustering (Feb 2026)** rewrote `services/clustering.py`: orders bucketed by (zone, hub) via point-in-polygon; multi-zone overlap tie-broken by min hub distance; hub picked from hubs INSIDE the zone (falls back to nearest hub when no hub sits inside). Cluster carries `zone_id`, `zone_name`, `hub_id`, `hub_name`. Re-clustering preserves in-flight clusters.
+- **Strict Zone-of-Working Assignment (Feb 2026)** `services/assignment.py` now hard-filters drivers by `driver.zone_id == cluster.zone_id` (alongside license + capacity).
+- **Route Planning auto-hub (Feb 2026)** removed UI hub selector and `hub_id` from `RoutePlanIn`. `POST /api/routing/plan` derives the origin from the most common cluster the driver is currently working on.
+- **Clustering UI (Feb 2026)** Orders → Clustering tab now lists per-order rows: Order Code | Address | Zone | Hub. Assignment tab shows Zone + Hub chips instead of cluster label.
 
 ## Frontend Pages (9)
 1. Overview — KPIs including Hubs count, live Singapore map with hubs/zones/orders/drivers/incidents
