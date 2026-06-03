@@ -109,7 +109,13 @@ export default function Zones() {
         </div>
         <div className="field">
           <label className="label">Polygon — click the map to add vertices, drag to reshape</label>
-          <PolygonEditor value={form.polygon} color={form.color} onChange={(p) => setForm(f => ({ ...f, polygon: p }))} height={380} />
+          <PolygonEditor
+            value={form.polygon}
+            color={form.color}
+            onChange={(p) => setForm(f => ({ ...f, polygon: p }))}
+            existingZones={zones.filter(z => !editing || z.id !== editing.id)}
+            height={380}
+          />
         </div>
       </Modal>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Marker, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Polygon, Polyline, Marker, Tooltip as LTooltip, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
 const vertexIcon = L.divIcon({
@@ -17,18 +17,27 @@ function ClickHandler({ onClick, enabled }) {
 }
 
 /**
- * Interactive polygon editor.
+ * Interactive polygon editor with existing-zone context overlay.
+ *
  * - Click on map to add a vertex (when Draw Mode on)
  * - Drag any vertex to reshape
- * - Click a vertex in the list to remove it
+ * - Click a vertex in Draw-Mode-OFF to remove it
  *
  * Props:
- *   value: number[][]    // current polygon [[lat,lng], ...]
+ *   value:           number[][]   — current polygon being edited
  *   onChange(points)
- *   color: string        // outline color
- *   height: number
+ *   color:           string       — outline color of the polygon being edited
+ *   height:          number
+ *   existingZones:   {id, name, polygon, color}[]  — other zones to display in the background
+ *                                                    (to help avoid overlap)
  */
-export default function PolygonEditor({ value = [], onChange, color = "#0d7c78", height = 420 }) {
+export default function PolygonEditor({
+  value = [],
+  onChange,
+  color = "#0d7c78",
+  height = 420,
+  existingZones = [],
+}) {
   const [drawMode, setDrawMode] = useState(value.length < 3);
   const [points, setPoints] = useState(value || []);
 
@@ -54,6 +63,11 @@ export default function PolygonEditor({ value = [], onChange, color = "#0d7c78",
         <span className="muted" style={{ fontSize: 11.5 }}>
           Vertices: <b>{points.length}</b>{points.length < 3 ? " — add at least 3 to form a polygon" : ""}
         </span>
+        {existingZones.length > 0 && (
+          <span className="muted" style={{ fontSize: 11.5, marginLeft: "auto" }}>
+            Other zones are shown faded — avoid overlap.
+          </span>
+        )}
       </div>
       <div style={{ height, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)", position: "relative", cursor: drawMode ? "crosshair" : "grab" }}>
         <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }}>
@@ -63,8 +77,25 @@ export default function PolygonEditor({ value = [], onChange, color = "#0d7c78",
           />
           <ClickHandler enabled={drawMode} onClick={push} />
 
+          {existingZones.map((z) => (
+            <Polygon
+              key={`existing-${z.id}`}
+              positions={z.polygon}
+              pathOptions={{
+                color: z.color || "#94a3b8",
+                weight: 1.5,
+                opacity: 0.6,
+                fillOpacity: 0.08,
+                dashArray: "5 4",
+              }}
+              interactive={false}
+            >
+              <LTooltip sticky direction="center" opacity={0.85}>{z.name}</LTooltip>
+            </Polygon>
+          ))}
+
           {points.length >= 3 && (
-            <Polygon positions={points} pathOptions={{ color, weight: 2, fillOpacity: 0.18 }} />
+            <Polygon positions={points} pathOptions={{ color, weight: 2.5, fillOpacity: 0.22 }} />
           )}
           {points.length === 2 && (
             <Polyline positions={points} pathOptions={{ color, weight: 2, dashArray: "4 4" }} />
