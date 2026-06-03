@@ -288,7 +288,7 @@ export default function Orders() {
           </button>
         </>}>
         <div className="field">
-          <label className="label">Search customer address (OpenStreetMap)</label>
+          <label className="label">Search customer address (OneMap.gov.sg)</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input className="input" data-testid="order-geocode-q"
               value={geo.q} onChange={e => setGeo(g => ({ ...g, q: e.target.value }))}

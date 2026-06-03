@@ -129,7 +129,7 @@ export default function Hubs() {
           <input className="input" data-testid="hub-address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="e.g., 1 Tanglin Rd, Singapore" /></div>
 
         <div className="field">
-          <label className="label">Search address (OpenStreetMap)</label>
+          <label className="label">Search address (OneMap.gov.sg)</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input className="input" data-testid="hub-geocode-q" value={geo.q} onChange={e => setGeo(g => ({ ...g, q: e.target.value }))}
               onKeyDown={e => e.key === "Enter" && geocode()} placeholder="e.g., Marina Bay Sands" />
