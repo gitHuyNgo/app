@@ -71,7 +71,7 @@ function TopBar() {
   useEffect(() => { localStorage.setItem("lc_role", role); }, [role]);
 
   const reseed = async () => {
-    if (!window.confirm("Re-seed demo data? This clears everything first.")) return;
+    if (!window.confirm("⚠️  This will WIPE all your data (hubs, drivers, vehicles, zones, orders) and replace it with the demo dataset. Continue?")) return;
     setSeeding(true);
     await http.post("/seed");
     setSeeding(false);
@@ -107,8 +107,8 @@ function TopBar() {
             <option value="shipper">Shipper</option>
           </select>
         </span>
-        <button className="btn" onClick={reseed} disabled={seeding} data-testid="reseed-btn">
-          <RefreshCw size={14} /> {seeding ? "Seeding…" : "Reseed demo"}
+        <button className="btn" onClick={reseed} disabled={seeding} data-testid="reseed-btn" title="Wipe DB and load demo data">
+          <RefreshCw size={14} /> {seeding ? "Seeding…" : "Reset to demo"}
         </button>
       </div>
     </header>
@@ -116,16 +116,25 @@ function TopBar() {
 }
 
 function Shell() {
-  // On mount, seed if empty
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await http.get("/stats");
-        const empty = Object.values(s.data).every(v => v === 0);
-        if (empty) { await http.post("/seed"); window.location.reload(); }
-      } catch {}
-    })();
-  }, []);
+  const [empty, setEmpty] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+
+  const checkEmpty = async () => {
+    try {
+      const s = await http.get("/stats");
+      const isEmpty = Object.values(s.data).every(v => v === 0);
+      setEmpty(isEmpty);
+    } catch {
+      setEmpty(false);
+    }
+  };
+  useEffect(() => { checkEmpty(); }, []);
+
+  const loadDemo = async () => {
+    setSeeding(true);
+    try { await http.post("/seed"); window.location.reload(); }
+    finally { setSeeding(false); }
+  };
 
   return (
     <div className="lc-shell">
@@ -133,6 +142,21 @@ function Shell() {
       <div className="lc-main">
         <TopBar />
         <main className="lc-content">
+          {empty && (
+            <div className="card" data-testid="empty-db-banner" style={{ marginBottom: 18, borderColor: "#fde68a", background: "#fffbeb" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Database is empty</div>
+                  <div style={{ fontSize: 12.5, color: "#6b5b2c" }}>
+                    Start by loading demo data or simply create your own hubs, drivers, vehicles, zones and orders — everything you create persists in MongoDB.
+                  </div>
+                </div>
+                <button className="btn primary" onClick={loadDemo} disabled={seeding} data-testid="load-demo-btn">
+                  {seeding ? "Loading…" : "Load demo data"}
+                </button>
+              </div>
+            </div>
+          )}
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/hub-managers" element={<HubManagers />} />

@@ -1,0 +1,30 @@
+# LionCity AI-Logistics — local development stack
+#
+# Usage:
+#   docker compose up -d                 # start MongoDB in background, persistent
+#   docker compose down                  # stop containers (data preserved)
+#   docker compose down -v               # ⚠️ stop AND wipe data (use only to fully reset)
+#
+# After this is running, start the backend and frontend the usual way:
+#   cd backend && uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+#   cd frontend && yarn start
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: lioncity-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      # Named volume → survives container restarts and recreations.
+      - lioncity_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lioncity_mongo_data:
+    name: lioncity_mongo_data
