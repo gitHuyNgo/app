@@ -7,13 +7,55 @@ Coordination System) — a centralised, AI-assisted last-mile delivery operation
 platform for Singapore, using **LTA DataMall** as the live data source.
 
 ## Architecture
-- **Backend**: FastAPI + Motor (MongoDB) at port 8001, `/api` prefix
+The backend follows a layered, FAANG-style structure under `backend/app/`:
+
+```
+backend/
+├── server.py                # 47-line entrypoint: lifespan + CORS + include router
+└── app/
+    ├── __init__.py
+    ├── config.py            # Frozen Settings dataclass loaded from .env
+    ├── database.py          # Motor singleton + close_db()
+    ├── logging.py           # Root logger configured once
+    ├── utils.py             # now_iso, new_id, find_one, find_list, unique_phone
+    ├── seed.py              # Deterministic demo dataset
+    ├── models/              # Pydantic v2 models (one file per resource)
+    │   ├── common.py        # MongoModel base with id + created_at
+    │   ├── hub.py
+    │   ├── hub_manager.py
+    │   ├── driver.py
+    │   ├── vehicle.py
+    │   ├── zone.py
+    │   ├── order.py
+    │   ├── cluster.py
+    │   └── route.py
+    ├── services/            # Pure business logic — no FastAPI imports
+    │   ├── geo.py           # haversine, CBD bbox, polygon centroid, interpolate
+    │   ├── routing.py       # OSRM client + Python NN-TSP fallback
+    │   ├── lta.py           # LTA DataMall paginated client
+    │   ├── geocoding.py     # Nominatim wrapper (best-effort)
+    │   ├── hubs.py          # get_active_hub(id) resolver
+    │   ├── clustering.py    # Postal-sector clustering (FR-13)
+    │   └── assignment.py    # Cluster → driver auto-assignment (FR-15)
+    └── routers/             # FastAPI routers; one file per resource
+        ├── __init__.py      # Aggregates everything under /api
+        ├── meta.py          # /, /stats, /seed
+        ├── hubs.py          # /hubs CRUD
+        ├── hub_managers.py  # /hub-managers CRUD (FR-01..02)
+        ├── drivers.py       # /drivers + /{id}/status, /{id}/location, /locations
+        ├── vehicles.py      # /vehicles + /{id}/assign, /{id}/unassign
+        ├── zones.py         # /zones + /{id}/(un)assign-driver
+        ├── orders.py        # /orders + /cluster, /assign-auto, /assign-manual, /{id}/status
+        ├── clusters.py      # /clusters (read-only)
+        ├── routing.py       # /routing/plan, /routing/{driver_id}, /drivers/{id}/simulate-step
+        ├── shipper.py       # /shipper/{driver_id}/orders (FR-19)
+        └── lta.py           # /lta/* + /geocode
+```
+
 - **Frontend**: React 19 + react-router + Tailwind + Leaflet (CartoDB light tiles)
-- **Data**: MongoDB collections — `hub_managers`, `drivers`, `vehicles`, `zones`, `orders`, `clusters`, `routes`
-- **External**:
-  - LTA DataMall (`/api/lta/incidents`, `/speed-bands`, `/erp-rates`, `/taxi-availability`) — key in `/app/backend/.env`
-  - OSRM public routing (attempted; unreachable from container → auto-fallback to pure-Python NN-TSP with CBD-bbox detour for Avoid-ERP mode)
-- **No authentication** (per user choice) — role switched via top-bar dropdown (Admin / Hub Manager / Shipper)
+- **Data**: MongoDB collections — `hubs`, `hub_managers`, `drivers`, `vehicles`, `zones`, `orders`, `clusters`, `routes`
+- **External**: LTA DataMall, OSRM (with Python NN-TSP fallback), Nominatim
+- **No authentication** (per user choice) — role switched via top-bar dropdown
 
 ## User Personas
 1. **Super Admin** — onboards Hub Managers, oversees fleet-wide KPIs.
