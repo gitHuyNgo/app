@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Query
 
-from app.services.geocoding import geocode_address
+from app.services.geocoding import geocode_address, reverse_geocode
 from app.services.lta import fetch_lta
 
 router = APIRouter(tags=["lta"])
@@ -52,3 +52,8 @@ async def lta_taxi_availability() -> List[Dict[str, Any]]:
 @router.get("/geocode")
 async def geocode(q: str = Query(..., min_length=3)) -> Dict[str, Any]:
     return await geocode_address(q)
+
+
+@router.get("/geocode/reverse")
+async def geocode_reverse(lat: float, lng: float) -> Dict[str, Any]:
+    return await reverse_geocode(lat, lng)

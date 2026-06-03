@@ -2,18 +2,39 @@ import React, { useEffect, useState } from "react";
 import { http, fmtDate } from "../lib/api";
 import { Modal, Badge } from "../components/UI";
 import MapView from "../components/MapView";
+import HubPicker from "../components/HubPicker";
+
+const SG_DEFAULT = [1.305, 103.83];
+
+function inTwoDaysISO() {
+  // Default delivery deadline: now + 2 days, rounded to the hour.
+  const d = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+  d.setMinutes(0, 0, 0);
+  return d;
+}
+
+const emptyForm = () => ({
+  address: "",
+  postal_code: "",
+  lat: SG_DEFAULT[0],
+  lng: SG_DEFAULT[1],
+  weight_kg: 2.0,
+  required_by: inTwoDaysISO().toISOString().slice(0, 16),
+});
 
 export default function Orders() {
   const [tab, setTab] = useState("inbound");
   const [orders, setOrders] = useState([]);
   const [clusters, setClusters] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [form, setForm] = useState({ address: "", postal_code: "", lat: 1.305, lng: 103.83, weight_kg: 2.0, required_by: new Date(Date.now()+4*3600*1000).toISOString().slice(0,16) });
+  const [form, setForm] = useState(emptyForm());
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState([]);
   const [manualDriver, setManualDriver] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [geo, setGeo] = useState({ q: "", busy: false, results: [], error: "" });
+  const [pinHasMoved, setPinHasMoved] = useState(false);
 
   const load = async () => {
     const [o, c, d] = await Promise.all([http.get("/orders"), http.get("/clusters"), http.get("/drivers")]);
@@ -21,15 +42,66 @@ export default function Orders() {
   };
   useEffect(() => { load(); }, []);
 
+  const openNew = () => {
+    setForm(emptyForm());
+    setGeo({ q: "", busy: false, results: [], error: "" });
+    setPinHasMoved(false);
+    setOpen(true);
+  };
+
+  const searchAddress = async () => {
+    if (!geo.q || geo.q.length < 3) return;
+    setGeo(g => ({ ...g, busy: true, error: "", results: [] }));
+    try {
+      const r = await http.get("/geocode", { params: { q: geo.q } });
+      if (r.data.error) setGeo(g => ({ ...g, busy: false, error: r.data.error, results: [] }));
+      else setGeo(g => ({ ...g, busy: false, results: r.data.results || [] }));
+    } catch {
+      setGeo(g => ({ ...g, busy: false, error: "Geocoder unreachable — drag the pin on the map." }));
+    }
+  };
+
+  const pickResult = (r) => {
+    setForm(f => ({
+      ...f,
+      address: r.name || f.address,
+      lat: r.lat,
+      lng: r.lng,
+      postal_code: r.postal_code || f.postal_code,
+    }));
+    setGeo(g => ({ ...g, results: [] }));
+    setPinHasMoved(false);
+  };
+
+  const onPinMove = async ([lat, lng]) => {
+    setForm(f => ({ ...f, lat, lng }));
+    setPinHasMoved(true);
+    // Reverse-geocode silently to keep the address in sync.
+    try {
+      const r = await http.get("/geocode/reverse", { params: { lat, lng } });
+      if (r.data && r.data.name) {
+        setForm(f => ({
+          ...f,
+          address: r.data.name,
+          postal_code: r.data.postal_code || f.postal_code,
+        }));
+      }
+    } catch { /* keep manual address if reverse fails */ }
+  };
+
   const addOrder = async () => {
+    if (!form.address) return;
     try {
       setBusy(true);
       await http.post("/orders", {
-        ...form,
-        lat: parseFloat(form.lat), lng: parseFloat(form.lng), weight_kg: parseFloat(form.weight_kg),
+        address: form.address,
+        postal_code: form.postal_code || "000000",
+        lat: parseFloat(form.lat),
+        lng: parseFloat(form.lng),
+        weight_kg: parseFloat(form.weight_kg),
         required_by: new Date(form.required_by).toISOString(),
       });
-      setOpen(false); setToast("Order added to warehouse"); load();
+      setOpen(false); setToast("Order registered"); load();
     } finally { setBusy(false); }
   };
   const doCluster = async () => {
@@ -79,7 +151,7 @@ export default function Orders() {
       {tab === "inbound" && (
         <div>
           <div className="toolbar">
-            <button className="btn primary" data-testid="add-order-btn" onClick={() => setOpen(true)}>+ Warehouse Entry</button>
+            <button className="btn primary" data-testid="add-order-btn" onClick={openNew}>+ Warehouse Entry</button>
           </div>
           <div className="card" style={{ padding: 0 }}>
             <table className="tbl" data-testid="orders-table">
@@ -208,27 +280,73 @@ export default function Orders() {
         </div>
       )}
 
-      <Modal open={open} title="Warehouse Entry" onClose={() => setOpen(false)}
+      <Modal open={open} title="Register a new parcel" onClose={() => setOpen(false)}
         footer={<>
           <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
-          <button className="btn primary" onClick={addOrder} disabled={busy || !form.address} data-testid="save-order-btn">Save</button>
+          <button className="btn primary" onClick={addOrder} disabled={busy || !form.address} data-testid="save-order-btn">
+            {busy ? "Saving…" : "Save"}
+          </button>
         </>}>
-        <div className="field"><label className="label">Delivery address</label>
-          <input className="input" data-testid="order-address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+        <div className="field">
+          <label className="label">Search customer address (OpenStreetMap)</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input className="input" data-testid="order-geocode-q"
+              value={geo.q} onChange={e => setGeo(g => ({ ...g, q: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && (e.preventDefault(), searchAddress())}
+              placeholder="e.g., 313 Somerset, Marina Bay Sands, 60 Airport Blvd…" />
+            <button type="button" className="btn" disabled={geo.busy || geo.q.length < 3}
+              onClick={searchAddress} data-testid="order-geocode-btn">
+              {geo.busy ? "…" : "Search"}
+            </button>
+          </div>
+          {geo.error && <div style={{ color: "#b91c1c", fontSize: 11.5, marginTop: 6 }}>{geo.error}</div>}
+          {geo.results.length > 0 && (
+            <div style={{ marginTop: 6, border: "1px solid var(--border)", borderRadius: 8, maxHeight: 160, overflow: "auto" }}>
+              {geo.results.map((r, i) => (
+                <div key={i} style={{ padding: "8px 10px", borderBottom: "1px solid var(--border)", fontSize: 12, cursor: "pointer" }}
+                  onClick={() => pickResult(r)} data-testid={`order-geo-result-${i}`}>
+                  <b>{(r.name || "").split(",")[0]}</b>{" "}
+                  <span className="muted">{r.name}</span>
+                  {r.postal_code && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>S{r.postal_code}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="field">
+          <label className="label">Delivery location — drag the pin to fine-tune</label>
+          <HubPicker
+            position={[form.lat, form.lng]}
+            color="#0d7c78"
+            onChange={onPinMove}
+            height={260}
+          />
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+            {form.lat.toFixed(5)}, {form.lng.toFixed(5)}
+            {form.postal_code && <> · Postal <b>S{form.postal_code}</b></>}
+            {pinHasMoved && <span style={{ color: "#0d7c78" }}> · address updated from pin</span>}
+          </div>
+        </div>
+
+        <div className="field"><label className="label">Customer address</label>
+          <textarea className="textarea" data-testid="order-address"
+            value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
+            placeholder="Auto-filled from the search result or pin. You can edit it manually too." />
+        </div>
+
         <div className="row">
-          <div className="field"><label className="label">Postal code</label>
-            <input className="input" data-testid="order-postal" value={form.postal_code} onChange={e => setForm({ ...form, postal_code: e.target.value })} /></div>
           <div className="field"><label className="label">Weight (kg)</label>
-            <input className="input" type="number" step="0.1" data-testid="order-weight" value={form.weight_kg} onChange={e => setForm({ ...form, weight_kg: e.target.value })} /></div>
+            <input className="input" type="number" step="0.1" data-testid="order-weight"
+              value={form.weight_kg} onChange={e => setForm({ ...form, weight_kg: e.target.value })} />
+          </div>
+          <div className="field">
+            <label className="label">Required by (default: +2 days)</label>
+            <input className="input" type="datetime-local" data-testid="order-required"
+              value={form.required_by}
+              onChange={e => setForm({ ...form, required_by: e.target.value })} />
+          </div>
         </div>
-        <div className="row">
-          <div className="field"><label className="label">Latitude</label>
-            <input className="input" data-testid="order-lat" value={form.lat} onChange={e => setForm({ ...form, lat: e.target.value })} /></div>
-          <div className="field"><label className="label">Longitude</label>
-            <input className="input" data-testid="order-lng" value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })} /></div>
-        </div>
-        <div className="field"><label className="label">Required by</label>
-          <input className="input" type="datetime-local" data-testid="order-required" value={form.required_by} onChange={e => setForm({ ...form, required_by: e.target.value })} /></div>
       </Modal>
     </div>
   );
