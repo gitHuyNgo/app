@@ -77,6 +77,8 @@ backend/
 - **FR-19** Shipper inbox `/api/shipper/{driver_id}/orders` with ordered sequence + route polyline
 - **FR-20** Delivered/Failed update with optional proof_photo, proof_signature, fail_reason
 - **Hubs (multi-location, Jan 2026)** full CRUD, pin by drag or map-click, address geocoding via OpenStreetMap Nominatim with graceful fallback, is_default flag enforced, shown on Overview map + used as routing origin
+- **License-Vehicle Compatibility (Feb 2026)** UI filter + backend 400 enforcement on `POST /api/vehicles/{id}/assign` — matrix: motorbike→{A,B}, van→{B,C}
+- **Hub-bound Hub Managers (Feb 2026)** `HubManager.hub_id` references real hub doc; create/edit modal uses dropdown sourced from `GET /api/hubs`; server resolves `hub_name` from the hub doc
 
 ## Frontend Pages (9)
 1. Overview — KPIs including Hubs count, live Singapore map with hubs/zones/orders/drivers/incidents
