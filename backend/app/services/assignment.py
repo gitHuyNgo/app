@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Set
 from app.database import db
 from app.services.geo import haversine
 from app.services.hubs import get_active_hub
-from app.utils import find_list, find_one
+from app.utils import find_list
 
 # License → vehicle-type compatibility.
 LICENSE_VEHICLE_MATRIX: Dict[str, Set[str]] = {
@@ -67,6 +67,7 @@ async def _score_candidate(
     candidate: Dict[str, Any],
     cluster: Dict[str, Any],
     hub: Dict[str, Any],
+    zones_by_id: Dict[str, Dict[str, Any]],
 ) -> float:
     driver, vehicle = candidate["driver"], candidate["vehicle"]
     score = 0.0
@@ -85,11 +86,8 @@ async def _score_candidate(
         score += EV_BONUS
 
     # 4. Distance from driver's reference (zone centre or hub) to cluster centroid
-    if driver.get("zone_id"):
-        zone = await find_one("zones", {"id": driver["zone_id"]})
-        ref = (zone["center"][0], zone["center"][1]) if zone else (hub["lat"], hub["lng"])
-    else:
-        ref = (hub["lat"], hub["lng"])
+    zone = zones_by_id.get(driver.get("zone_id")) if driver.get("zone_id") else None
+    ref = (zone["center"][0], zone["center"][1]) if zone else (hub["lat"], hub["lng"])
     distance_km = haversine(ref, (cluster["centroid"][0], cluster["centroid"][1])) / 1000.0
     score -= DISTANCE_PENALTY_PER_KM * distance_km
 
@@ -121,6 +119,8 @@ async def assign_clusters_to_drivers() -> Dict[str, Any]:
     drivers = await find_list("drivers", {"status": "available"})
     vehicles = await find_list("vehicles")
     vehicles_by_id = {v["id"]: v for v in vehicles}
+    zones = await find_list("zones")
+    zones_by_id = {z["id"]: z for z in zones}
     hub = await get_active_hub()
 
     # Heaviest clusters first so they aren't stuck with motorbike-only drivers later.
@@ -145,7 +145,7 @@ async def assign_clusters_to_drivers() -> Dict[str, Any]:
         # Score and pick the best fit.
         scored = []
         for candidate in candidates:
-            score = await _score_candidate(candidate, cluster, hub)
+            score = await _score_candidate(candidate, cluster, hub, zones_by_id)
             scored.append((score, candidate))
         scored.sort(key=lambda x: x[0], reverse=True)
         best_score, best = scored[0]
