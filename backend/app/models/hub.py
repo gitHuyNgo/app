@@ -14,6 +14,7 @@ class Hub(MongoModel):
     lat: float
     lng: float
     is_default: bool = False
+    color: str = "#0d7c78"
     notes: str = ""
 
 
@@ -23,4 +24,5 @@ class HubIn(BaseModel):
     lat: float
     lng: float
     is_default: Optional[bool] = False
+    color: Optional[str] = "#0d7c78"
     notes: Optional[str] = ""

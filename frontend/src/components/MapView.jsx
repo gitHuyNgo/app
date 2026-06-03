@@ -12,8 +12,29 @@ L.Icon.Default.mergeOptions({
 
 const SG_CENTER = [1.3521, 103.8198];
 
-const hubIcon = L.divIcon({ className: "", html: `<div class="hub-marker"></div>`, iconSize: [18, 18] });
-const hubIconLg = L.divIcon({ className: "", html: `<div class="hub-marker lg"></div>`, iconSize: [22, 22] });
+const hubMarkerHtml = (color, isDefault) => {
+  const ring = isDefault
+    ? `box-shadow: 0 0 0 4px ${color}33, 0 2px 8px rgba(0,0,0,.3);`
+    : `box-shadow: 0 0 0 2px ${color}33, 0 1px 4px rgba(0,0,0,.25);`;
+  const size = isDefault ? 24 : 20;
+  return `<div style="
+      background:${color};
+      border:3px solid #fff;
+      width:${size}px;height:${size}px;
+      border-radius:5px;
+      transform:rotate(45deg);
+      ${ring}
+    "></div>`;
+};
+
+const buildHubIcon = (color = "#0d7c78", isDefault = false) =>
+  L.divIcon({
+    className: "",
+    html: hubMarkerHtml(color, isDefault),
+    iconSize: [isDefault ? 24 : 20, isDefault ? 24 : 20],
+    iconAnchor: [isDefault ? 12 : 10, isDefault ? 12 : 10],
+  });
+
 const orderIcon = (status = "pending") =>
   L.divIcon({ className: "", html: `<div class="order-marker ${status}"></div>`, iconSize: [12, 12] });
 const driverIcon = (initial = "D") =>
@@ -67,10 +88,13 @@ export default function MapView({
         ))}
 
         {hubs.map((h) => (
-          <Marker key={h.id} position={[h.lat, h.lng]} icon={h.is_default ? hubIconLg : hubIcon}>
+          <Marker key={h.id} position={[h.lat, h.lng]} icon={buildHubIcon(h.color || "#0d7c78", !!h.is_default)}>
             <Popup>
               <div style={{ fontSize: 12 }}>
-                <div style={{ fontWeight: 600 }}>{h.name} {h.is_default && <span style={{color:'#d2233c'}}>· default</span>}</div>
+                <div style={{ fontWeight: 600 }}>
+                  <span style={{ display: "inline-block", width: 9, height: 9, background: h.color || "#0d7c78", borderRadius: 2, marginRight: 6, verticalAlign: "middle" }}></span>
+                  {h.name} {h.is_default && <span style={{ color: "#d2233c" }}>· default</span>}
+                </div>
                 {h.address && <div style={{ color: "#475569" }}>{h.address}</div>}
                 <div style={{ color: "#64748b" }}>{h.lat.toFixed(4)}, {h.lng.toFixed(4)}</div>
               </div>
@@ -79,7 +103,7 @@ export default function MapView({
         ))}
 
         {showHub && hubs.length === 0 && (
-          <Marker position={[1.3521, 103.8198]} icon={hubIcon}>
+          <Marker position={[1.3521, 103.8198]} icon={buildHubIcon("#d2233c", true)}>
             <Popup>Central Hub</Popup>
           </Marker>
         )}

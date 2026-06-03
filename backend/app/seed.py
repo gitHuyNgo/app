@@ -15,10 +15,10 @@ from app.services.geo import polygon_centroid
 
 COLLECTIONS = ("hub_managers", "drivers", "vehicles", "zones", "orders", "clusters", "routes", "hubs")
 
-HUBS: List[Tuple[str, str, float, float, bool]] = [
-    ("Central Hub · Queenstown", "1 Tanglin Rd, Singapore 247905", 1.3053, 103.8198, True),
-    ("East Hub · Tampines", "10 Tampines Central, Singapore 529538", 1.3540, 103.9430, False),
-    ("West Hub · Jurong", "1 Jurong Gateway Rd, Singapore 608549", 1.3331, 103.7426, False),
+HUBS: List[Tuple[str, str, float, float, bool, str]] = [
+    ("Central Hub · Queenstown", "1 Tanglin Rd, Singapore 247905", 1.3053, 103.8198, True, "#0d7c78"),
+    ("East Hub · Tampines", "10 Tampines Central, Singapore 529538", 1.3540, 103.9430, False, "#7c3aed"),
+    ("West Hub · Jurong", "1 Jurong Gateway Rd, Singapore 608549", 1.3331, 103.7426, False, "#f59e0b"),
 ]
 
 HUB_MANAGERS: List[Tuple[str, str, str]] = [
@@ -75,8 +75,8 @@ async def seed_demo() -> Dict[str, Any]:
         await db[collection].delete_many({})
 
     hub_ids: List[str] = []
-    for name, address, lat, lng, is_default in HUBS:
-        hub = Hub(name=name, address=address, lat=lat, lng=lng, is_default=is_default)
+    for name, address, lat, lng, is_default, color in HUBS:
+        hub = Hub(name=name, address=address, lat=lat, lng=lng, is_default=is_default, color=color)
         await db.hubs.insert_one(hub.model_dump())
         hub_ids.append(hub.id)
 

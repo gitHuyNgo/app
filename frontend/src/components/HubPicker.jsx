@@ -2,9 +2,9 @@ import React, { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
-const pinIcon = L.divIcon({
+const buildPinIcon = (color = "#d2233c") => L.divIcon({
   className: "",
-  html: `<div style="background:#d2233c;border:3px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>`,
+  html: `<div style="background:${color};border:3px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>`,
   iconSize: [22, 22],
   iconAnchor: [11, 22],
 });
@@ -33,8 +33,9 @@ function ClickHandler({ onPick }) {
  *   onChange(point)            — called whenever the user clicks the map or drags the pin
  *   height
  */
-export default function HubPicker({ position, onChange, height = 320 }) {
+export default function HubPicker({ position, onChange, height = 320, color = "#d2233c" }) {
   const pos = position || [1.3521, 103.8198];
+  const pinIcon = buildPinIcon(color);
 
   return (
     <div style={{ height, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>

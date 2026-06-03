@@ -8,7 +8,7 @@ export default function Hubs() {
   const [hubs, setHubs] = useState([]);
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", address: "", lat: 1.3521, lng: 103.8198, is_default: false, notes: "" });
+  const [form, setForm] = useState({ name: "", address: "", lat: 1.3521, lng: 103.8198, is_default: false, color: "#0d7c78", notes: "" });
   const [geo, setGeo] = useState({ q: "", busy: false, results: [], error: "" });
 
   const load = async () => { const r = await http.get("/hubs"); setHubs(r.data); };
@@ -16,13 +16,13 @@ export default function Hubs() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ name: "", address: "", lat: 1.3521, lng: 103.8198, is_default: hubs.length === 0, notes: "" });
+    setForm({ name: "", address: "", lat: 1.3521, lng: 103.8198, is_default: hubs.length === 0, color: "#0d7c78", notes: "" });
     setGeo({ q: "", busy: false, results: [], error: "" });
     setOpen(true);
   };
   const openEdit = (h) => {
     setEditing(h);
-    setForm({ name: h.name, address: h.address || "", lat: h.lat, lng: h.lng, is_default: !!h.is_default, notes: h.notes || "" });
+    setForm({ name: h.name, address: h.address || "", lat: h.lat, lng: h.lng, is_default: !!h.is_default, color: h.color || "#0d7c78", notes: h.notes || "" });
     setGeo({ q: "", busy: false, results: [], error: "" });
     setOpen(true);
   };
@@ -76,7 +76,7 @@ export default function Hubs() {
                 <tr key={h.id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--red)" }}></span>
+                      <span style={{ width: 14, height: 14, borderRadius: 3, background: h.color || "#0d7c78", border: "2px solid #fff", boxShadow: `0 0 0 1px ${(h.color || "#0d7c78")}55` }}></span>
                       <b>{h.name}</b>
                     </div>
                     <div className="muted" style={{ fontSize: 11 }}>{fmtDate(h.created_at)}</div>
@@ -104,8 +104,27 @@ export default function Hubs() {
           <button className="btn" onClick={() => setOpen(false)}>Cancel</button>
           <button className="btn primary" onClick={save} disabled={!form.name} data-testid="save-hub-btn">{editing ? "Save" : "Create"}</button>
         </>}>
-        <div className="field"><label className="label">Hub name</label>
-          <input className="input" data-testid="hub-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+        <div className="row">
+          <div className="field"><label className="label">Hub name</label>
+            <input className="input" data-testid="hub-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="field"><label className="label">Marker color</label>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <input type="color" className="input" style={{ width: 52, padding: 2, height: 36 }}
+                data-testid="hub-color" value={form.color}
+                onChange={e => setForm({ ...form, color: e.target.value })} />
+              {["#0d7c78", "#7c3aed", "#f59e0b", "#0ea5e9", "#16a34a", "#db2777", "#475569"].map(c => (
+                <button key={c} type="button" title={c}
+                  data-testid={`hub-color-preset-${c.replace('#','')}`}
+                  onClick={() => setForm({ ...form, color: c })}
+                  style={{
+                    width: 22, height: 22, borderRadius: 6, background: c,
+                    border: form.color === c ? "2px solid #0b1e24" : "1px solid rgba(0,0,0,.15)",
+                    cursor: "pointer", padding: 0,
+                  }} />
+              ))}
+            </div>
+          </div>
+        </div>
         <div className="field"><label className="label">Address (optional, free text)</label>
           <input className="input" data-testid="hub-address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="e.g., 1 Tanglin Rd, Singapore" /></div>
 
@@ -133,7 +152,7 @@ export default function Hubs() {
 
         <div className="field">
           <label className="label">Location — click the map or drag the pin</label>
-          <HubPicker position={[form.lat, form.lng]} onChange={(p) => setForm(f => ({ ...f, lat: p[0], lng: p[1] }))} height={260} />
+          <HubPicker position={[form.lat, form.lng]} color={form.color} onChange={(p) => setForm(f => ({ ...f, lat: p[0], lng: p[1] }))} height={260} />
           <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
             {form.lat.toFixed(5)}, {form.lng.toFixed(5)}
           </div>
